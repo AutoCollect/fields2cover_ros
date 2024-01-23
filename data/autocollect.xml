@@ -1,0 +1,22 @@
+<ogr:FeatureCollection
+     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+     xsi:schemaLocation="http://ogr.maptools.org/ Output_GML.xsd"
+     xmlns:ogr="http://ogr.maptools.org/"
+     xmlns:gml="http://www.opengis.net/gml">
+  <gml:boundedBy>
+    <gml:Box>
+      <gml:coord><gml:X>176.097293722949</gml:X><gml:Y>-40.21693169619846</gml:Y><gml:Z>0</gml:Z></gml:coord>
+      <gml:coord><gml:X>176.0976025429292</gml:X><gml:Y>-40.21666722627873</gml:Y><gml:Z>0</gml:Z></gml:coord>
+    </gml:Box>
+  </gml:boundedBy>
+                                                               
+  <gml:featureMember>
+    <ogr:Untitled fid="Untitled.0">
+      <ogr:geometryProperty><gml:Polygon srsName="EPSG:4326"><gml:outerBoundaryIs><gml:LinearRing><gml:coordinates>176.097402016021,-40.2169316961985,0 176.097602542929,-40.2169026491649,0 176.097474333719,-40.2166672262787,0 176.097293722949,-40.2167126677031,0 176.097402016021,-40.2169316961985,0</gml:coordinates></gml:LinearRing></gml:outerBoundaryIs></gml:Polygon></ogr:geometryProperty>
+      <ogr:Name>Untitled polygon</ogr:Name>
+      <ogr:tessellate>-1</ogr:tessellate>
+      <ogr:extrude>0</ogr:extrude>
+      <ogr:visibility>-1</ogr:visibility>
+    </ogr:Untitled>
+  </gml:featureMember>
+</ogr:FeatureCollection>

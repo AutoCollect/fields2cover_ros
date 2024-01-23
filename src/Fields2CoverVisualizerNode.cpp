@@ -32,7 +32,7 @@ namespace fields2cover_ros {
 
       f2c::Parser::importGml(field_file, fields_);
       
-      f2c::Transform::transform(fields_[0], "EPSG:28992");
+      f2c::Transform::transform(fields_[0], "EPSG:27200");
       robot_.cruise_speed = 2.0;
       robot_.setMinRadius(2.0);
       double headland_width = 3.0*robot_.op_width;
