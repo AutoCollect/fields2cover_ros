@@ -12,6 +12,17 @@ This package is an interface to ROS of the [Fields2Cover library](https://github
 
 <img src="logo_f2c.jpeg" width="250" height="250">
 
+## GML file
+
+1. Get KML file from [Google Earth](https://earth.google.com/web/@-39.92028915,175.10683008,19.48936629a,32870.16435519d,35y,339.45188542h,0t,0r/data=OgMKATA)
+2. Convert KML file into GML file.
+   ```
+   sudo add-apt-repository ppa:ubuntugis/ppa && sudo apt-get update
+   sudo apt-get update
+   sudo apt-get install gdal-bin
+   ogr2ogr -f 'GML' Output_GML.xml Untitled4.kml
+   ```
+
 ## Installation
 
 This code has been tested with ROS 1 noetic and melodic, and ROS 2 galatic, humble and rolling.
