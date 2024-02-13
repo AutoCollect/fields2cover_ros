@@ -23,6 +23,7 @@ namespace fields2cover_ros {
       void init_VisualizerNode();
       void publish_topics(void);
       void rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level);
+      double normalize_angle(double angle);
 
     public:
       ros::NodeHandle private_node_handle_ { "~" };
@@ -32,6 +33,10 @@ namespace fields2cover_ros {
       ros::Publisher field_no_headlands_publisher_;
       ros::Publisher field_gps_publisher_;
       ros::Publisher field_swaths_publisher_;
+      ros::Publisher field_swaths_pt_publisher_;
+      ros::Publisher field_swath_start_publisher_;
+      ros::Publisher field_swath_end_publisher_;
+      ros::Publisher path_start_publisher_;
 
       sensor_msgs::NavSatFix gps_;
 
@@ -45,6 +50,14 @@ namespace fields2cover_ros {
       int sg_objective_ {0};
       int opt_turn_type_ {0};
       int opt_route_type_ {0};
+
+      std::string polygon_file_;
+      geometry_msgs::PolygonStamped polygon_;
+      geometry_msgs::PolygonStamped polygon_headland_;
+      F2CCells area_;
+      std::ofstream path_file_;
+      int path_file_seq_ = 0;
+
   };
 }
 
