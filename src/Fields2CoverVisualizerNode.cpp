@@ -146,10 +146,10 @@ namespace fields2cover_ros {
       marker_swaths_start.color.g = 1.0;
       marker_swaths_start.color.a = 1.0;
 
-      geometry_msgs::Point ros_swaths_point;
+      geometry_msgs::Point ros_swaths_start_point;
       for (auto swath : swaths) {
-	      conversor::ROS::to(swath.startPoint(), ros_swaths_point);
-        marker_swaths_start.points.push_back(ros_swaths_point);
+	      conversor::ROS::to(swath.startPoint(), ros_swaths_start_point);
+        marker_swaths_start.points.push_back(ros_swaths_start_point);
       }
       //==============================================================
       visualization_msgs::Marker marker_swaths_end;
@@ -165,9 +165,11 @@ namespace fields2cover_ros {
       marker_swaths_end.color.r = 1.0;
       marker_swaths_end.color.a = 1.0;
 
+      geometry_msgs::Point ros_swaths_end_point;
       for (auto swath : swaths) {
-	      conversor::ROS::to(swath.endPoint(), ros_swaths_point);
-        marker_swaths_end.points.push_back(ros_swaths_point);
+	      conversor::ROS::to(swath.endPoint(), ros_swaths_end_point);
+        marker_swaths_end.points.push_back(ros_swaths_end_point);
+        // ROS_INFO("points: %d", int(swath.getNumPoints()));
       }
       //==============================================================
 
@@ -257,9 +259,6 @@ namespace fields2cover_ros {
       marker_swaths.scale.x = 0.05;
       marker_swaths.scale.y = 0.05;
       marker_swaths.scale.z = 0.05;
-      // marker_swaths.scale.x = 1.0;
-      // marker_swaths.scale.y = 1.0;
-      // marker_swaths.scale.z = 1.0;
       marker_swaths.color.b = 1.0;
       marker_swaths.color.a = 1.0;
       //========================================================
@@ -288,8 +287,6 @@ namespace fields2cover_ros {
       marker_path_start.color.b = 1.0;
       marker_path_start.color.a = 1.0;
       //========================================================
-
-      
       geometry_msgs::Point ros_p;
       for (auto&& s : path.states) {
 	      conversor::ROS::to(s.point, ros_p);
