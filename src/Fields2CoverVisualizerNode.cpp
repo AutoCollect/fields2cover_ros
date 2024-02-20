@@ -11,6 +11,9 @@
 
 #include <fstream>
 #include <iostream>
+#include <cmath>
+#include <algorithm>
+
 #include <dynamic_reconfigure/server.h>
 #include <fields2cover_ros/F2CConfig.h>
 
@@ -67,9 +70,41 @@ namespace fields2cover_ros {
     }
 
     double VisualizerNode::normalize_angle(double angle) {
-      const double result = fmod(angle + M_PI, 2.0*M_PI);
+      const double result = fmod(angle + M_PI, 2.0 * M_PI);
       if(result <= 0.0) return result + M_PI;
         return result - M_PI;
+    }
+
+    // simple linear interpolation
+    void VisualizerNode::interpolation(const double start_x, const double start_y, 
+                                       const double end_x,   const double end_y,
+                                       const double step,
+                                       std::vector<double>& interp_x, std::vector<double>& interp_y) {
+
+      double new_x = std::min(start_x, end_x) + step;
+      double max_x = std::max(start_x, end_x);
+
+      bool reverse = false;
+
+      if (std::min(start_x, end_x) == end_x) {
+        reverse = true;
+      }
+
+      while(new_x < max_x) {
+        /* Linear Interpolation */
+        //  yp = y0 + ((y1-y0) / (x1-x0)) * (xp - x0);
+        double new_y = start_y + ((end_y - start_y) / (end_x - start_x)) * (new_x - start_x);
+        interp_x.push_back(new_x);
+        interp_y.push_back(new_y);
+        new_x += step;
+      }
+
+      if (reverse) {
+        std::reverse(interp_x.begin(), interp_x.end());
+        std::reverse(interp_y.begin(), interp_y.end());
+      }
+
+      ROS_INFO("interp size: %d", int(interp_x.size()));
     }
 
     void VisualizerNode::publish_topics(void) {
@@ -146,10 +181,10 @@ namespace fields2cover_ros {
       marker_swaths_start.color.g = 1.0;
       marker_swaths_start.color.a = 1.0;
 
-      geometry_msgs::Point ros_swaths_point;
+      geometry_msgs::Point ros_swaths_start_point;
       for (auto swath : swaths) {
-	      conversor::ROS::to(swath.startPoint(), ros_swaths_point);
-        marker_swaths_start.points.push_back(ros_swaths_point);
+	      conversor::ROS::to(swath.startPoint(), ros_swaths_start_point);
+        marker_swaths_start.points.push_back(ros_swaths_start_point);
       }
       //==============================================================
       visualization_msgs::Marker marker_swaths_end;
@@ -165,9 +200,11 @@ namespace fields2cover_ros {
       marker_swaths_end.color.r = 1.0;
       marker_swaths_end.color.a = 1.0;
 
+      geometry_msgs::Point ros_swaths_end_point;
       for (auto swath : swaths) {
-	      conversor::ROS::to(swath.endPoint(), ros_swaths_point);
-        marker_swaths_end.points.push_back(ros_swaths_point);
+	      conversor::ROS::to(swath.endPoint(), ros_swaths_end_point);
+        marker_swaths_end.points.push_back(ros_swaths_end_point);
+        // ROS_INFO("points: %d", int(swath.getNumPoints()));
       }
       //==============================================================
 
@@ -232,22 +269,108 @@ namespace fields2cover_ros {
       //========================================================
       std::string path_file_name = "/home/patrick/u_turn_ws/data/path_sample_" + std::to_string(path_file_seq_++) + ".txt";
       path_file_.open(path_file_name);
+      //========================================================
+      visualization_msgs::Marker marker_swaths_pt;
+      marker_swaths_pt.header.frame_id = "map";
+      marker_swaths_pt.header.stamp = marker_swaths_start.header.stamp;
+      marker_swaths_pt.action  = visualization_msgs::Marker::ADD;
+      marker_swaths_pt.pose.orientation.w = 1.0;
+      marker_swaths_pt.type    = visualization_msgs::Marker::POINTS;
+      marker_swaths_pt.scale.x = 0.05;
+      marker_swaths_pt.scale.y = 0.05;
+      marker_swaths_pt.scale.z = 0.05;
+      marker_swaths_pt.color.r = 1.0;
+      marker_swaths_pt.color.a = 1.0;
+      //========================================================
+      int pt_counter = 0;
+      int gap_counter = 0;
+      double gap_thresh_hold = 1.0;
+      double interp_step = 0.01;
+
+      double pre_x = 0.0;
+      double pre_y = 0.0;
+      double pre_z = 0.0;
+
+      double pre_quat_x = 0.0;
+      double pre_quat_y = 0.0;
+      double pre_quat_z = 0.0;
+      double pre_quat_w = 0.0;
+
       for (auto&& s : path.states) {
         double normalized_angle = normalize_angle(s.angle);
         tf2::Quaternion quat; // Create this quaternion from roll/pitch/yaw (in radians)
         quat.setRPY(0, 0, normalized_angle);
+        //========================================================
+        if (pt_counter > 0) {
+          // calculate distace
+          double dx = pre_x - double(s.point.getX());
+          double dy = pre_y - double(s.point.getY());
+          double dist = std::hypot(dx, dy);
+          // ROS_INFO("dx = %f, dy = %f, dist = %f", dx, dy, dist);
+          if (dist > gap_thresh_hold) {
+            //========================================================
+            // point linear interpolation
+            std::vector<double> interp_x;
+            std::vector<double> interp_y;
+            interpolation(pre_x, pre_y, s.point.getX(), s.point.getY(), interp_step, interp_x, interp_y);
+            //========================================================
+            gap_counter ++;
+            //========================================================
+            if (!interp_x.empty() && !interp_y.empty() && interp_x.size() > 0 && interp_y.size() > 0) {
+              for (int i = 0; i< interp_x.size(); i++) {
+                
+                geometry_msgs::Point pt;
+                pt.x = interp_x[i];
+                pt.y = interp_y[i];
+                pt.z = pre_z;
+                marker_swaths_pt.points.push_back(pt);
+
+                // write to file
+                path_file_ << interp_x[i]   << " "
+                           << interp_y[i]   << " "
+                           << pre_z         << " "
+                           << pre_quat_x    << " "
+                           << pre_quat_y    << " "
+                           << pre_quat_z    << " "
+                           << pre_quat_w    << std::endl;
+              }
+            }
+          }
+        }
+        //========================================================
+        // otherwise update the previous points
+        pt_counter ++;
+
+        pre_x = s.point.getX();
+        pre_y = s.point.getY();
+        pre_z = s.point.getZ();
+
+        pre_quat_x = quat.getX();
+        pre_quat_y = quat.getY();
+        pre_quat_z = quat.getZ();
+        pre_quat_w = quat.getW();
+
+        //========================================================
+        geometry_msgs::Point pt;
+        conversor::ROS::to(s.point, pt);
+        marker_swaths_pt.points.push_back(pt);
+        //========================================================
+        // write to file
         path_file_ << s.point.getX()   << " "
                    << s.point.getY()   << " "
                    << s.point.getZ()   << " "
-                   // << normalized_angle << std::endl;
                    << quat.getX()      << " "
                    << quat.getY()      << " "
                    << quat.getZ()      << " "
                    << quat.getW()      << std::endl;
+        //========================================================
       }
       path_file_.close();
+      ROS_INFO("gap_counter = %d", gap_counter);
       ROS_INFO("Gen Path DONE");
       //========================================================
+      //========================================================
+      // visualization part
       visualization_msgs::Marker marker_swaths;
       marker_swaths.header.frame_id = "map";
       marker_swaths.header.stamp = marker_swaths_start.header.stamp;
@@ -257,23 +380,20 @@ namespace fields2cover_ros {
       marker_swaths.scale.x = 0.05;
       marker_swaths.scale.y = 0.05;
       marker_swaths.scale.z = 0.05;
-      // marker_swaths.scale.x = 1.0;
-      // marker_swaths.scale.y = 1.0;
-      // marker_swaths.scale.z = 1.0;
       marker_swaths.color.b = 1.0;
       marker_swaths.color.a = 1.0;
       //========================================================
-      visualization_msgs::Marker marker_swaths_pt;
-      marker_swaths_pt.header.frame_id = "map";
-      marker_swaths_pt.header.stamp = marker_swaths.header.stamp;
-      marker_swaths_pt.action  = visualization_msgs::Marker::ADD;
-      marker_swaths_pt.pose.orientation.w = 1.0;
-      marker_swaths_pt.type    = visualization_msgs::Marker::POINTS;
-      marker_swaths_pt.scale.x = 0.05;
-      marker_swaths_pt.scale.y = 0.05;
-      marker_swaths_pt.scale.z = 0.05;
-      marker_swaths_pt.color.r = 1.0;
-      marker_swaths_pt.color.a = 1.0;
+      // visualization_msgs::Marker marker_swaths_pt;
+      // marker_swaths_pt.header.frame_id = "map";
+      // marker_swaths_pt.header.stamp = marker_swaths.header.stamp;
+      // marker_swaths_pt.action  = visualization_msgs::Marker::ADD;
+      // marker_swaths_pt.pose.orientation.w = 1.0;
+      // marker_swaths_pt.type    = visualization_msgs::Marker::POINTS;
+      // marker_swaths_pt.scale.x = 0.05;
+      // marker_swaths_pt.scale.y = 0.05;
+      // marker_swaths_pt.scale.z = 0.05;
+      // marker_swaths_pt.color.r = 1.0;
+      // marker_swaths_pt.color.a = 1.0;
       //========================================================
       bool init_point = false;
       visualization_msgs::Marker marker_path_start;
@@ -288,8 +408,6 @@ namespace fields2cover_ros {
       marker_path_start.color.b = 1.0;
       marker_path_start.color.a = 1.0;
       //========================================================
-
-      
       geometry_msgs::Point ros_p;
       for (auto&& s : path.states) {
 	      conversor::ROS::to(s.point, ros_p);
@@ -300,7 +418,7 @@ namespace fields2cover_ros {
         }
 
         marker_swaths.points.push_back(ros_p);
-        marker_swaths_pt.points.push_back(ros_p);
+        // marker_swaths_pt.points.push_back(ros_p);
       }
 
       field_swaths_publisher_     .publish(marker_swaths);

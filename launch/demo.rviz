@@ -11,7 +11,10 @@ Panels:
         - /Polygon1
         - /Marker1
         - /Polygon2
-        - /Marker2
+        - /path_pt_marker1
+        - /swath_start1
+        - /swath_end1
+        - /path_start_marker1
       Splitter Ratio: 0.5
     Tree Height: 1174
   - Class: rviz/Selection
@@ -84,13 +87,13 @@ Visualization Manager:
       Unreliable: false
       Value: true
     - Class: rviz/Marker
-      Enabled: true
+      Enabled: false
       Marker Topic: /field/swaths
       Name: Marker
       Namespaces:
-        "": true
+        {}
       Queue Size: 100
-      Value: true
+      Value: false
     - Alpha: 1
       Class: rviz/Polygon
       Color: 204; 0; 0
@@ -103,7 +106,7 @@ Visualization Manager:
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /field/swaths_pt
-      Name: Marker
+      Name: path_pt_marker
       Namespaces:
         "": true
       Queue Size: 100
@@ -111,7 +114,7 @@ Visualization Manager:
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /field/swaths_start
-      Name: Marker
+      Name: swath_start
       Namespaces:
         "": true
       Queue Size: 100
@@ -119,7 +122,7 @@ Visualization Manager:
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /field/swaths_end
-      Name: Marker
+      Name: swath_end
       Namespaces:
         "": true
       Queue Size: 100
@@ -127,7 +130,7 @@ Visualization Manager:
     - Class: rviz/Marker
       Enabled: true
       Marker Topic: /field/path_start
-      Name: Marker
+      Name: path_start_marker
       Namespaces:
         "": true
       Queue Size: 100

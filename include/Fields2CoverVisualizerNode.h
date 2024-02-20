@@ -23,7 +23,13 @@ namespace fields2cover_ros {
       void init_VisualizerNode();
       void publish_topics(void);
       void rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level);
+      // normalize angle
       double normalize_angle(double angle);
+      // interpolation swath
+      void interpolation(const double start_x, const double start_y,
+                         const double end_x,   const double end_y,
+                         const double step,
+                         std::vector<double>& interp_x, std::vector<double>& interp_y);
 
     public:
       ros::NodeHandle private_node_handle_ { "~" };
