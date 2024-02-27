@@ -57,6 +57,10 @@ namespace fields2cover_ros {
       int opt_turn_type_ {0};
       int opt_route_type_ {0};
 
+      // boundary input
+      std::string boundaryFilePath_;
+      std::string boundaryFileName_;
+
       std::string polygon_file_;
       geometry_msgs::PolygonStamped polygon_;
       geometry_msgs::PolygonStamped polygon_headland_;

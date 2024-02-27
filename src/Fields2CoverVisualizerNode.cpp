@@ -34,18 +34,23 @@ namespace fields2cover_ros {
       field_swath_start_publisher_     = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/swaths_start", 1, true);
       field_swath_end_publisher_       = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/swaths_end",   1, true);
       path_start_publisher_            = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/path_start",   1, true);
+      //==============================================================      
+      private_node_handle_.getParam("boundary_file_name", boundaryFileName_);
+      private_node_handle_.getParam("boundary_file_path", boundaryFilePath_);
       //==============================================================
-      polygon_file_ = "/home/patrick/u_turn_ws/data/metalform_carpark.txt";
+      polygon_file_ = boundaryFilePath_ + boundaryFileName_;
+      ROS_INFO("fetching data from: %s", polygon_file_.c_str());
       std::ifstream polygon_file(polygon_file_);
       double position_x, position_y, position_z;
+      // spare
+      double quat_x, quat_y, quat_z, quat_w;
       polygon_.header.frame_id = "map";
       //==============================================================
       f2c::types::LinearRing border;
       f2c::types::Field field;
       f2c::types::Cell cell;
       //==============================================================
-
-      while (polygon_file >> position_x >> position_y >> position_z)
+      while (polygon_file >> position_x >> position_y >> position_z >> quat_x >> quat_y >> quat_z >> quat_w)
       {
         // std::cout << position_x << " " 
         //           << position_y << " " 
@@ -109,31 +114,11 @@ namespace fields2cover_ros {
 
     void VisualizerNode::publish_topics(void) {
 
-      // auto gps = transf_.getRefPointInGPS(fields_[0]);
-      // gps_.longitude = gps.getX();
-      // gps_.latitude = gps.getY();
-      // gps_.altitude = gps.getZ();
-      // gps_.header.stamp = ros::Time::now();
-      // gps_.header.frame_id = "base_link";
-      // field_gps_publisher_.publish(gps_);
-      // auto f = fields_[0].field.clone();
-      // f2c::hg::ConstHL hl_gen_;
-      // F2CCell no_headlands = hl_gen_.generateHeadlands(f, optim_.headland_width).getGeometry(0);
-
-      // geometry_msgs::PolygonStamped polygon_st;
-
-      // polygon_st.header.stamp = ros::Time::now();
-      // polygon_st.header.frame_id = "map";
-      // conversor::ROS::to(f.getCellBorder(0), polygon_st.polygon);
       //==============================================================
       polygon_.header.stamp = ros::Time::now();
       field_polygon_publisher_.publish(polygon_);
-      // polygon_st.polygon.points.clear();
       //==============================================================
       f2c::hg::ConstHL const_hl;
-      // F2CCells no_headlands = const_hl.generateHeadlands(area_, optim_.headland_width);
-      // conversor::ROS::to(no_headlands.getCellBorder(0), polygon_headland_.polygon);
-
       F2CCell no_headlands = const_hl.generateHeadlands(area_, optim_.headland_width).getGeometry(0);
       conversor::ROS::to(no_headlands.getGeometry(0), polygon_headland_.polygon);
       polygon_headland_.header.frame_id = "map";
@@ -259,15 +244,7 @@ namespace fields2cover_ros {
       }
 
       //========================================================
-      // for (auto&& s : path.states) {
-      //   double normalized_angle = normalize_angle(s.angle);
-      //   std::cout << s.point.getX()   << " "
-      //             << s.point.getY()   << " "
-      //             << s.point.getZ()   << " "
-      //             << normalized_angle << std::endl;
-      // }
-      //========================================================
-      std::string path_file_name = "/home/patrick/u_turn_ws/data/path_sample_" + std::to_string(path_file_seq_++) + ".txt";
+      std::string path_file_name = boundaryFilePath_ + "path_sample_" + std::to_string(path_file_seq_++) + ".txt";            
       path_file_.open(path_file_name);
       //========================================================
       visualization_msgs::Marker marker_swaths_pt;
