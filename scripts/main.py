@@ -16,7 +16,7 @@ import fields2cover as f2c
 
 
 
-file_path = '/home/chen/auto_collect/src/autocollect_ws/fields2cover_ros/scripts/global_odom.txt'
+file_path = '/home/aucobot-p4/demo_ws/data/global_odom.txt'
 
 points = load_data(file_path)
 
@@ -82,7 +82,7 @@ for i, coord in enumerate(second_ring_polygon_coords):
         break
 
 new_path_coords.append(second_point_away)
-file_path = '/home/chen/auto_collect/src/autocollect_ws/fields2cover_ros/scripts/main.txt'
+file_path = '/home/aucobot-p4/demo_ws/data/text.txt'
 if os.path.exists(file_path):
     os.remove(file_path)
     print("File deleted successfully.")
@@ -117,6 +117,7 @@ bf = f2c.SG_BruteForce()
 n_swath = f2c.OBJ_NSwath()
 swaths = bf.generateBestSwaths(n_swath, robot.op_width, no_hl.getGeometry(0))
 
+
 snake_sorter = f2c.RP_Boustrophedon()
 
 swaths = snake_sorter.genSortedSwaths(swaths)
@@ -142,7 +143,7 @@ for i in range(len(interpolated_path_coords_1) - 1):
     quaternion = heading_to_quaternion(theta)
     quaternions.append(quaternion)
     if not math.isnan(quaternion[3]):
-        with open('/home/chen/auto_collect/src/autocollect_ws/fields2cover_ros/scripts/main.txt', 'a') as file:
+        with open('/home/aucobot-p4/demo_ws/data/text.txt', 'a') as file:
             file.write(f'{round(point1[0], 5)} {round(point1[1], 5)} 0.0 {quaternion[0]} {quaternion[1]} {quaternion[2]} {quaternion[3]}\n')
 
 import matplotlib.pyplot as plt
@@ -154,4 +155,4 @@ ax.set_aspect('equal', adjustable='box')
 
 
 plt.legend()
-plt.show()
+plt.savefig('global_planner.png', dpi=300)

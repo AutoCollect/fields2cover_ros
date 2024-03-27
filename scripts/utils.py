@@ -2,6 +2,8 @@ import numpy as np
 import math
 import matplotlib.pyplot as plt
 from shapely.geometry import Polygon, LineString
+import matplotlib
+matplotlib.use('Agg')
 
 # Load your data
 def load_data(file_path):
@@ -223,4 +225,5 @@ def plot_polygons(original, simplified):
     plt.xlabel('X')
     plt.ylabel('Y')
     plt.legend()
-    plt.show()
+    plt.savefig('polygon_simplification_parameter.png')
+    # plt.show()

@@ -5,20 +5,21 @@ import numpy as np
 import math
 import os
 # from catmull_rom import num_segments, flatten, catmull_rom_spline, catmull_rom_chain
-from utils import num_segments, catmull_rom_chain, load_data, calculate_point_on_line, calculate_distance, interpolate_path_large, calculate_heading, heading_to_quaternion
+from utils import num_segments, catmull_rom_chain, load_data, calculate_point_on_line, calculate_distance, interpolate_path_large, calculate_heading, heading_to_quaternion, simplify_polygon
 
 import fields2cover as f2c
 from ccma import CCMA
 
-ccma = CCMA(w_ma=10, w_cc=3)
+ccma = CCMA(w_ma=10, w_cc=10)
 
-file_path = '50_map.txt'
+source_file_path = '/home/aucobot-p4/demo_ws/data/global_odom.txt'
+file_path = "/home/aucobot-p4/demo_ws/data/test2.txt"
 
 ############
 # buffer
-buffer_distance = -1
+buffer_distance = -1.0
 # first ring
-inward_offset_distance = -3
+inward_offset_distance = -1
 # distance between end of ring and start of ring
 distance_away = -2*inward_offset_distance  # meters
 # step size interpolation
@@ -27,13 +28,14 @@ step_size = 0.01
 
 
 ##### source data
-points = load_data(file_path)
+points = load_data(source_file_path)
 original_polygon = Polygon(points)
 
 # original_polygon = Polygon([(0,0),(50,0),(50,50),(0,50),[0,0]])
 
 ##### remove noise
-
+original_polygon = Polygon(points)
+original_polygon = simplify_polygon(points, epsilon=0.8)  
 ##### generate two polygons
 original_polygon = original_polygon.buffer(buffer_distance)
 first_ring_polygon = original_polygon.buffer(inward_offset_distance)
@@ -88,25 +90,27 @@ for point in list(second_ring_polygon.exterior.coords):
 
 field = f2c.Cells(f2c.Cell(f2c.LinearRing(f2c.VectorPoint(points))))
 cells = field
-robot = f2c.Robot(2.0, 6.0)
+robot = f2c.Robot(1.0, 2.0)
 const_hl = f2c.HG_Const_gen()
 no_hl = const_hl.generateHeadlands(cells, -inward_offset_distance)
 bf = f2c.SG_BruteForce()
 
 
-swaths = bf.generateSwaths(0.0, robot.op_width, no_hl.getGeometry(0))
+# swaths = bf.generateSwaths(0.0, robot.op_width, no_hl.getGeometry(0))
+n_swath = f2c.OBJ_NSwath()
+swaths = bf.generateBestSwaths(n_swath, robot.op_width, no_hl.getGeometry(0))
+
 
 snake_sorter = f2c.RP_Boustrophedon()
 
 swaths = snake_sorter.genSortedSwaths(swaths)
 
-robot.setMinRadius(4.0)
+robot.setMinRadius(2.0)
 path_planner = f2c.PP_PathPlanning()
 dubins = f2c.PP_DubinsCurves()
 path = path_planner.searchBestPath(robot, swaths, dubins)
 
 for state in path.states:
-    state
     interpolated_path_coords_1 = np.concatenate((interpolated_path_coords_1, [np.array([state.point.getX(), state.point.getY()])]))
 
 interpolated_path_coords_1 = interpolate_path_large(interpolated_path_coords_1, 0.5)
@@ -138,17 +142,33 @@ for i in range(len(interpolated_path_coords_1) - 1):
 # new_path_1 = LineString(smoothed_points)
 
 # For visualization purposes, let's plot the original polygon, the two rings, and the new path
+# import matplotlib.pyplot as plt
+
+# fig, ax = plt.subplots()
+# x, y = new_path2.xy
+# ax.plot(x, y, 'r-', label='Original Polygon')
+# x, y = new_path_1.xy
+# ax.plot(x, y, 'k-', label='Polygon with smooth corners')
+# ax.scatter(x, y)
+# # Set aspect ratio to equal to avoid distortion
+# ax.set_aspect('equal', adjustable='box')
+
+
+# plt.legend()
+# plt.show()
+
+
 import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')
 
 fig, ax = plt.subplots()
 x, y = new_path2.xy
-ax.plot(x, y, 'r-', label='Original Polygon')
+ax.plot(x, y, 'r-', label='interpolate 1 meter first')
 x, y = new_path_1.xy
-ax.plot(x, y, 'k-', label='Polygon with smooth corners')
-ax.scatter(x, y)
-# Set aspect ratio to equal to avoid distortion
+ax.plot(x, y, 'k-', label='interpolate 1 meter first')
 ax.set_aspect('equal', adjustable='box')
 
 
 plt.legend()
-plt.show()
+plt.savefig('global_planner.png', dpi=300)
