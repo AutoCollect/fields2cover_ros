@@ -5,21 +5,23 @@ import numpy as np
 import math
 import os
 # from catmull_rom import num_segments, flatten, catmull_rom_spline, catmull_rom_chain
-from utils import num_segments, catmull_rom_chain, load_data, calculate_point_on_line, calculate_distance, interpolate_path_large, calculate_heading, heading_to_quaternion, simplify_polygon
+from utils import num_segments, catmull_rom_chain, load_data, calculate_point_on_line, calculate_distance, interpolate_path_large, calculate_heading, heading_to_quaternion, simplify_polygon, plot_polygons
 
 import fields2cover as f2c
 from ccma import CCMA
 
 ccma = CCMA(w_ma=10, w_cc=10)
 
-source_file_path = '/home/aucobot-p4/demo_ws/data/global_odom.txt'
-file_path = "/home/aucobot-p4/demo_ws/data/test2.txt"
+directory_path = "/home/chen/demo_day/data_2_4_2"
+source_file_path = '/home/chen/demo_day/data_2_4_2/global_odom.txt'
+file_path = "/home/chen/demo_day/data_2_4_2/test8.txt"
+picture_path = "test8.png"
 
 ############
 # buffer
 buffer_distance = -1.0
 # first ring
-inward_offset_distance = -1
+inward_offset_distance = -2
 # distance between end of ring and start of ring
 distance_away = -2*inward_offset_distance  # meters
 # step size interpolation
@@ -35,7 +37,9 @@ original_polygon = Polygon(points)
 
 ##### remove noise
 original_polygon = Polygon(points)
-original_polygon = simplify_polygon(points, epsilon=0.8)  
+polygon2 = simplify_polygon(points, epsilon=1.0)  
+plot_polygons(original_polygon, polygon2)
+original_polygon = polygon2
 ##### generate two polygons
 original_polygon = original_polygon.buffer(buffer_distance)
 first_ring_polygon = original_polygon.buffer(inward_offset_distance)
@@ -90,7 +94,7 @@ for point in list(second_ring_polygon.exterior.coords):
 
 field = f2c.Cells(f2c.Cell(f2c.LinearRing(f2c.VectorPoint(points))))
 cells = field
-robot = f2c.Robot(1.0, 2.0)
+robot = f2c.Robot(1.0, 4.0)
 const_hl = f2c.HG_Const_gen()
 no_hl = const_hl.generateHeadlands(cells, -inward_offset_distance)
 bf = f2c.SG_BruteForce()
@@ -105,13 +109,19 @@ snake_sorter = f2c.RP_Boustrophedon()
 
 swaths = snake_sorter.genSortedSwaths(swaths)
 
-robot.setMinRadius(2.0)
+robot.setMinRadius(3.0)
 path_planner = f2c.PP_PathPlanning()
 dubins = f2c.PP_DubinsCurves()
 path = path_planner.searchBestPath(robot, swaths, dubins)
 
+# u_path = np.empty((0, 2))
+# interpolated_path_coords_1
+
 for state in path.states:
     interpolated_path_coords_1 = np.concatenate((interpolated_path_coords_1, [np.array([state.point.getX(), state.point.getY()])]))
+
+# for state in path.states:
+#     u_path = np.concatenate((u_path, [np.array([state.point.getX(), state.point.getY()])]))
 
 interpolated_path_coords_1 = interpolate_path_large(interpolated_path_coords_1, 0.5)
 
@@ -171,4 +181,4 @@ ax.set_aspect('equal', adjustable='box')
 
 
 plt.legend()
-plt.savefig('global_planner.png', dpi=300)
+plt.savefig(f'{directory_path}{picture_path}', dpi=300)
