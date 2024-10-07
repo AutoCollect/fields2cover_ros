@@ -125,13 +125,7 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
       target_link_libraries(visualizer_node
          ${catkin_LIBRARIES} Fields2Cover ${PROJECT_NAME}
       )
-
       add_dependencies(visualizer_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg )
-
-      add_executable(global_odom_recorder src/global_odom_recorder.cpp)
-
-      target_link_libraries(global_odom_recorder ${catkin_LIBRARIES})
-
     endif()
 
     if(CATKIN_ENABLE_TESTING OR BUILD_TESTING)

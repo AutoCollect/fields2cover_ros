@@ -5,7 +5,7 @@
 //=============================================================================
 
 #include "ros/conversor.h"
-
+#include <tf2/LinearMath/Quaternion.h>
 
 namespace conversor
 {
@@ -21,6 +21,26 @@ void ROS::to(const F2CPoint& _point, GeometryMsgs::Point& _p64) {
   _p64.z = _point.getZ();
 }
 
+void ROS::to(const F2CPoint& _point, const double& angle, GeometryMsgs::PoseStamped& _p64) {
+  _p64.pose.position.x = _point.getX();
+  _p64.pose.position.y = _point.getY();
+  _p64.pose.position.z = _point.getZ();
+
+  // Create a quaternion from yaw
+  tf2::Quaternion quat;
+  quat.setRPY(0, 0, (normalize(angle)));  // Roll = 0, Pitch = 0, Yaw = input yaw
+
+  _p64.pose.orientation.x = quat.getX();
+  _p64.pose.orientation.y = quat.getY();
+  _p64.pose.orientation.z = quat.getZ();
+  _p64.pose.orientation.w = quat.getW();
+}
+
+double ROS::normalize(const double& angle) {
+  const double result = fmod(angle + M_PI, 2.0 * M_PI);
+  if(result <= 0.0) return result + M_PI;
+  return result - M_PI;
+}
 
 void ROS::to(const F2CCell& _poly,
     std::vector<GeometryMsgs::Polygon>& _ros_poly) {

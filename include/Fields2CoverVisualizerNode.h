@@ -15,6 +15,8 @@
 #include <dynamic_reconfigure/server.h>
 #include <fields2cover_ros/F2CConfig.h>
 #include <fields2cover.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/OccupancyGrid.h>
 
 namespace fields2cover_ros {
 
@@ -23,15 +25,8 @@ namespace fields2cover_ros {
       void init_VisualizerNode();
       void publish_topics(void);
       void rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level);
-      // normalize angle
-      double normalize_angle(double angle);
-      // interpolation swath
-      void interpolation(const double start_x, const double start_y,
-                         const double end_x,   const double end_y,
-                         const double step,
-                         std::vector<double>& interp_x, std::vector<double>& interp_y);
 
-    public:
+    private:
       ros::NodeHandle private_node_handle_ { "~" };
       ros::NodeHandle public_node_handle_;
 
@@ -39,10 +34,8 @@ namespace fields2cover_ros {
       ros::Publisher field_no_headlands_publisher_;
       ros::Publisher field_gps_publisher_;
       ros::Publisher field_swaths_publisher_;
-      ros::Publisher field_swaths_pt_publisher_;
-      ros::Publisher field_swath_start_publisher_;
-      ros::Publisher field_swath_end_publisher_;
-      ros::Publisher path_start_publisher_;
+      ros::Publisher map_pub_;
+      nav_msgs::OccupancyGrid occupancy_grid_;
 
       sensor_msgs::NavSatFix gps_;
 
@@ -57,16 +50,36 @@ namespace fields2cover_ros {
       int opt_turn_type_ {0};
       int opt_route_type_ {0};
 
-      // boundary input
-      std::string boundaryFilePath_;
-      std::string boundaryFileName_;
+      // fixed pattern global plan 
+      // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan_;
+      ros::Publisher fixed_pattern_plan_publisher_;
 
-      std::string polygon_file_;
-      geometry_msgs::PolygonStamped polygon_;
-      geometry_msgs::PolygonStamped polygon_headland_;
-      F2CCells area_;
-      std::ofstream path_file_;
+      // fixed pattern global plan points
+      ros::Publisher fixed_pattern_plan_pose_array_pub_;
+
+      void publishFixedPatternPlan     (const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub);
+      void publishFixedPatternWayPoints(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub);
+
+      geometry_msgs::Point poseStampedToPoint(const geometry_msgs::PoseStamped& pose_stamped);
+
+      void interpolatePoints(const geometry_msgs::PoseStamped& start_point, 
+                             const geometry_msgs::PoseStamped& end_point, 
+                             const int& num_samples,
+                             const std::string& frame_id,
+                             const ros::Time& timestamp,
+                             std::vector<geometry_msgs::PoseStamped>& interp_path);
+
+      geometry_msgs::PoseStamped interpolate(const geometry_msgs::PoseStamped& p0,
+                                             const geometry_msgs::PoseStamped& p1,
+                                             const double& t,
+                                             const std::string& frame_id,
+                                             const ros::Time& timestamp);
+
+      void writePathToFile(const std::vector<geometry_msgs::PoseStamped>& plan, std::ofstream& path_file);
       int path_file_seq_ = 0;
+      std::string path_file_dir_;
+
+      void initializeGrid(double origin_x, double origin_y, int width, int height, double resolution);
 
   };
 }
