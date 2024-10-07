@@ -15,6 +15,7 @@
 #include <nav_msgs/Path.h> // for fixed pattern plan topic publish
 #include <geometry_msgs/PoseArray.h>
 #include <tf2/LinearMath/Quaternion.h>
+#include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // for converting quaternions
 
 using namespace std;
 
@@ -268,6 +269,16 @@ namespace fields2cover_ros {
       pre_wpt = cur_wpt;
     }
 
+    //========================================================
+    if (reverse_path_) {
+      ROS_ERROR("reverse path");
+      // reserve orientation
+      for (auto& wpt : fixed_pattern_plan) {
+        reverseOrientation(wpt);
+      }
+      std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
+    }
+    //========================================================
     // publish topics
     field_swaths_publisher_.publish(marker_swaths);
     // publishFixedPatternPlan (fixed_pattern_plan, fixed_pattern_plan_publisher_);
@@ -291,6 +302,7 @@ namespace fields2cover_ros {
     sg_objective_ = config.sg_objective;
     opt_turn_type_ = config.turn_type;
     opt_route_type_ = config.route_type;
+    reverse_path_ = config.reverse_path;
     publish_topics();
   }
 
@@ -382,6 +394,22 @@ namespace fields2cover_ros {
                 << wpt.pose.orientation.z << " "
                 << wpt.pose.orientation.w << std::endl;
     }
+  }
+
+  void VisualizerNode::reverseOrientation(geometry_msgs::PoseStamped& pose) {
+    // Extract the quaternion from the pose
+    tf2::Quaternion q_orig, q_rot, q_new;
+    tf2::fromMsg(pose.pose.orientation, q_orig);
+
+    // Create a quaternion representing a 180-degree rotation around the Z-axis (yaw axis)
+    q_rot.setRPY(0, 0, M_PI);  // Roll = 0, Pitch = 0, Yaw = 180 degrees (PI radians)
+
+    // Combine the original orientation with the 180-degree rotation
+    q_new = q_rot * q_orig;
+    q_new.normalize();
+
+    // Set the new orientation in the pose
+    pose.pose.orientation = tf2::toMsg(q_new);
   }
 }
 

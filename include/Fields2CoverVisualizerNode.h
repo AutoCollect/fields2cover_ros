@@ -50,6 +50,9 @@ namespace fields2cover_ros {
       int opt_turn_type_ {0};
       int opt_route_type_ {0};
 
+      // path reverse flag
+      bool reverse_path_ {false};
+
       // fixed pattern global plan 
       // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan_;
       ros::Publisher fixed_pattern_plan_publisher_;
@@ -81,6 +84,8 @@ namespace fields2cover_ros {
 
       void initializeGrid(double origin_x, double origin_y, int width, int height, double resolution);
 
+      // reverse orientation
+      void reverseOrientation(geometry_msgs::PoseStamped& pose);
   };
 }
 
