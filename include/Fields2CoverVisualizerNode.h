@@ -53,6 +53,9 @@ namespace fields2cover_ros {
       // path reverse flag
       bool reverse_path_ {false};
 
+      // U path waypoints interpolation gap
+      double interp_step_ = 0.01;
+
       // fixed pattern global plan 
       // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan_;
       ros::Publisher fixed_pattern_plan_publisher_;

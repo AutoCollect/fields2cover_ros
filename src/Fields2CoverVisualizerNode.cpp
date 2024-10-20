@@ -40,6 +40,10 @@ namespace fields2cover_ros {
     private_node_handle_.getParam("field_file", field_file);
     private_node_handle_.getParam("plan_file_dir", path_file_dir_);
 
+    // U path waypoints interpolation gap
+    private_node_handle_.param("interp_step", interp_step_, 0.01);
+    ROS_ERROR("[Debug] interp_step: %f", interp_step_);
+
     f2c::Parser::importGml(field_file, fields_);
     // f2c::Parser::importJson(field_file, fields_);
 
@@ -235,7 +239,6 @@ namespace fields2cover_ros {
     pre_wpt.pose.position.y = path.states[0].point.getY();
 
     double wpt_gap_thresh_hold = 1.0;
-    double interp_step = 0.1;
     std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
 
     for (auto&& s : path.states) {
@@ -248,7 +251,7 @@ namespace fields2cover_ros {
                                (pre_wpt.pose.position.y - cur_wpt.pose.position.y));
 
       if (dist > wpt_gap_thresh_hold) {
-        int num_samples = dist / interp_step;
+        int num_samples = dist / interp_step_;
         std::vector<geometry_msgs::PoseStamped> interp_path;
         interpolatePoints(pre_wpt, cur_wpt, num_samples, cur_wpt.header.frame_id, cur_wpt.header.stamp, interp_path);
         if (!interp_path.empty() && interp_path.size() > 0) {
