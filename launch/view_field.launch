@@ -1,7 +1,12 @@
 <launch>
+
+    <!--arg name="field_file" default="$(find fields2cover_ros)/data/paddock.xml"/-->
+    <arg name="field_file" default="$(find fields2cover_ros)/data/darryl_farm.xml"/>
+
     <node pkg="fields2cover_ros" type="visualizer_node" name="visualizer" output="screen">
-      <param name="field_file" type="string" value="$(find fields2cover_ros)/data/paddock.xml"/>
+      <param name="plan_file_dir" type="string" value="$(find fields2cover_ros)/plan/"/>
+      <param name="field_file"    value="$(arg field_file)"/>
     </node>
 
-    <!-- <node pkg="rviz" type="rviz" name="rviz" args="-d $(find fields2cover_ros)/launch/demo.rviz"/> -->
+    <!--node pkg="rviz" type="rviz" name="rviz" args="-d $(find fields2cover_ros)/launch/demo.rviz"/-->
 </launch>
