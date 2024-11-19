@@ -16,6 +16,7 @@
 #include <fields2cover_ros/F2CConfig.h>
 #include <fields2cover.h>
 #include <geometry_msgs/PoseStamped.h>
+#include <nav_msgs/OccupancyGrid.h>
 
 namespace fields2cover_ros {
 
@@ -34,6 +35,14 @@ namespace fields2cover_ros {
       ros::Publisher field_gps_publisher_;
       ros::Publisher field_swaths_publisher_;
 
+      ros::Publisher traj_3d_marker_pub_;
+      ros::Publisher traj_2d_marker_pub_;
+      ros::Publisher map_pub_;
+      nav_msgs::OccupancyGrid occupancy_grid_;
+      
+      int path_file_seq_ = 0;
+      std::string path_file_dir_;
+
       sensor_msgs::NavSatFix gps_;
 
       f2c::Transform transf_;
@@ -46,6 +55,11 @@ namespace fields2cover_ros {
       int sg_objective_ {0};
       int opt_turn_type_ {0};
       int opt_route_type_ {0};
+
+      ros::Publisher fixed_pattern_plan_pose_array_pub_;
+
+      void initializeGrid(double origin_x, double origin_y, int width, int height, double resolution);
+      void publishFixedPatternWayPoints(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub);
   };
 }
 
