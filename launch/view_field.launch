@@ -1,11 +1,13 @@
 <launch>
-
-    <!--arg name="field_file" default="$(find fields2cover_ros)/data/paddock.xml"/-->
-    <!--arg name="field_file" default="$(find fields2cover_ros)/data/darryl_farm.xml"/-->
+    <!--
+    <arg name="field_file" default="$(find fields2cover_ros)/data/paddock.xml"/>
+    <arg name="field_file" default="$(find fields2cover_ros)/data/darryl_farm.xml"/>
     <arg name="field_file" default="$(find fields2cover_ros)/data/carpark_1_esay.xml"/>
-    <!--arg name="field_file" default="$(find fields2cover_ros)/data/carpark_2_mainroad.xml"/-->
-    <!--arg name="field_file" default="$(find fields2cover_ros)/data/carpark_3_overlap.xml"/-->
-    <!--arg name="field_file" default="$(find fields2cover_ros)/data/carpark_4_turn.xml"/-->
+    <arg name="field_file" default="$(find fields2cover_ros)/data/carpark_2_mainroad.xml"/>
+    <arg name="field_file" default="$(find fields2cover_ros)/data/carpark_3_overlap.xml"/>
+    <arg name="field_file" default="$(find fields2cover_ros)/data/carpark_4_turn.xml"/>
+    -->
+    <arg name="field_file" default="$(find fields2cover_ros)/data/mainroad_test.xml"/>
 
     <node pkg="fields2cover_ros" type="visualizer_node" name="visualizer" output="screen">
       <param name="plan_file_dir" type="string" value="$(find fields2cover_ros)/plan/"/>
