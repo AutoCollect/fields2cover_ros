@@ -19,6 +19,7 @@
 #include <spline.h>  // Include the tk::spline header
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>
+#include <deque>
 
 
 using namespace std;
@@ -42,7 +43,9 @@ namespace fields2cover_ros {
     private_node_handle_.getParam("field_file", field_file);
     private_node_handle_.getParam("plan_file_dir", path_file_dir_);
 
+  
     f2c::Parser::importGml(field_file, fields_);
+
     f2c::Transform::transform(fields_[0], "EPSG:27200");
 
     robot_.cruise_speed = 2.0;
@@ -249,6 +252,40 @@ namespace fields2cover_ros {
     return smoothed_traj;
   }
 
+  // Function to calculate Euclidean distance between two PoseStamped positions
+  double calculateDistance(const geometry_msgs::Point& p1, const geometry_msgs::Point& p2) {
+      return std::sqrt(std::pow(p1.x - p2.x, 2) +
+                      std::pow(p1.y - p2.y, 2) +
+                      std::pow(p1.z - p2.z, 2));
+  }
+
+
+  // Function to downsample trajectory based on distance
+  std::vector<geometry_msgs::PoseStamped> downsampleTrajectory(const std::vector<geometry_msgs::PoseStamped>& trajectory, double min_distance) {
+    std::vector<geometry_msgs::PoseStamped> downsampled;
+
+    if (trajectory.empty()) return downsampled;
+
+    // Always include the first point
+    downsampled.push_back(trajectory[0]);
+
+    // Iterate through the trajectory
+    for (size_t i = 1; i < trajectory.size(); ++i) {
+        const auto& last_point = downsampled.back().pose.position;
+        const auto& current_point = trajectory[i].pose.position;
+
+        // Calculate the distance to the last added point
+        double distance = calculateDistance(last_point, current_point);
+
+        // Add the current point if it's farther than the minimum distance
+        if (distance >= min_distance) {
+            downsampled.push_back(trajectory[i]);
+        }
+    }
+
+    return downsampled;
+  }
+
   void VisualizerNode::publish_topics(void) {
     auto gps = transf_.getRefPointInGPS(fields_[0]);
     gps_.longitude = gps.getX();
@@ -313,7 +350,7 @@ namespace fields2cover_ros {
     // Set the line width
     line_strip.scale.x = 0.1; // Line width
 
-    double angle_rad = 2.25 * M_PI / 180.0;
+    double angle_rad = 0.0 * M_PI / 180.0;
     double cos_angle = std::cos(angle_rad);
     double sin_angle = std::sin(angle_rad);
 
@@ -337,7 +374,7 @@ namespace fields2cover_ros {
     //================================================
     //================================================
 
-    //----------------------------------------------------------
+    // //----------------------------------------------------------
     // // Calculate the bounding box of the polygon
     // double min_x = std::numeric_limits<double>::max();
     // double max_x = std::numeric_limits<double>::lowest();
@@ -369,15 +406,18 @@ namespace fields2cover_ros {
     //----------------------------------------------------------
 
     // std::vector<geometry_msgs::PoseStamped> origin_traj;
-    // for (size_t i = 0; i <= polygon_st.polygon.points.size() - 1; ++i) {
-    //   geometry_msgs::PoseStamped p;
-    //   p.pose.position.x  = polygon_st.polygon.points[i].x;
-    //   p.pose.position.y  = polygon_st.polygon.points[i].y;
-    //   p.pose.position.z  = 0.0;
-    //   origin_traj.push_back(p);
+    // for (const auto& point : polygon_st.polygon.points) {
+    //     geometry_msgs::PoseStamped p;
+    //     p.pose.position.x = point.x;
+    //     p.pose.position.y = point.y;
+    //     p.pose.position.z = 0.0;
+    //     origin_traj.push_back(p);
     // }
 
-    // std::vector<geometry_msgs::PoseStamped> interp_traj = smoothTrajectory(origin_traj, 0.05);
+    // // Downsample the trajectory
+    // double min_distance = 0.5; // Minimum distance in meters
+    // std::vector<geometry_msgs::PoseStamped> denois_traj = downsampleTrajectory(origin_traj, min_distance);
+    // std::vector<geometry_msgs::PoseStamped> interp_traj = smoothTrajectory(denois_traj, 0.05);
     // publishFixedPatternWayPoints(interp_traj, fixed_pattern_plan_pose_array_pub_);
 
     //----------------------------------------------------------
@@ -400,7 +440,6 @@ namespace fields2cover_ros {
     // path_file.close();
     // ROS_INFO("%s generated", path_file_name.c_str());
 
-    // publishFixedPatternWayPoints(interp_traj, fixed_pattern_plan_pose_array_pub_);
     //================================================
     //================================================
 
