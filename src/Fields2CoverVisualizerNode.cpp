@@ -28,10 +28,11 @@ using namespace std;
 namespace fields2cover_ros {
     
   void VisualizerNode::init_VisualizerNode() {
-    field_polygon_publisher_      = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/border",         1, true);
-    field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/no_headlands",   1, true);
-    field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/swaths",         1, true);
-    traj_2d_marker_pub_           = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/traj_2d_marker", 1, true);
+    field_polygon_publisher_      = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/border",       1, true);
+    field_2d_border_publisher_    = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/border_2d",    1, true);
+
+    field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/no_headlands", 1, true);
+    field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/swaths",       1, true);
 
     // Publisher for the occupancy grid map
     map_pub_ = public_node_handle_.advertise<nav_msgs::OccupancyGrid>("/map", 1, true);
@@ -180,36 +181,36 @@ namespace fields2cover_ros {
 
     field_polygon_publisher_.publish(polygon_st);
     //----------------------------------------------------------
-    // // calculate 2d GPS and create a marker
-    // visualization_msgs::Marker line_strip;
-    // line_strip.header.frame_id = frame_id_; // Change to your frame
-    // line_strip.header.stamp = ros::Time::now();
-    // line_strip.ns = "traj_2d_marker";
-    // line_strip.action = visualization_msgs::Marker::ADD;
-    // line_strip.pose.orientation.w = 1.0;
+    // calculate 2d GPS and create a marker
+    visualization_msgs::Marker line_strip;
+    line_strip.header.frame_id = frame_id_; // Change to your frame
+    line_strip.header.stamp = ros::Time::now();
+    line_strip.ns = "2d_border_marker";
+    line_strip.action = visualization_msgs::Marker::ADD;
+    line_strip.pose.orientation.w = 1.0;
 
-    // line_strip.id = 0;
-    // line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+    line_strip.id = 0;
+    line_strip.type = visualization_msgs::Marker::LINE_STRIP;
 
-    // // Set the line color (RGB + alpha)
-    // line_strip.color.r = 0.0;
-    // line_strip.color.g = 0.0;
-    // line_strip.color.b = 1.0;
-    // line_strip.color.a = 1.0;
+    // Set the line color (RGB + alpha)
+    line_strip.color.r = 0.0;
+    line_strip.color.g = 1.0;
+    line_strip.color.b = 1.0;
+    line_strip.color.a = 1.0;
 
-    // // Set the line width
-    // line_strip.scale.x = 0.1; // Line width
+    // Set the line width
+    line_strip.scale.x = 0.2; // Line width
 
-    // // Add points to the marker
-    // for (const auto& point : polygon_st.polygon.points) {
-    //     geometry_msgs::Point p;
-    //     p.x = point.x;
-    //     p.y = point.y;
-    //     p.z = 0.0;
-    //     line_strip.points.push_back(p);
-    // }
+    // Add points to the marker
+    for (const auto& point : polygon_st.polygon.points) {
+      geometry_msgs::Point p;
+      p.x = point.x;
+      p.y = point.y;
+      p.z = 0.0;
+      line_strip.points.push_back(p);
+    }
 
-    // traj_2d_marker_pub_.publish(line_strip);
+    field_2d_border_publisher_.publish(line_strip);
     // //----------------------------------------------------------
     // // Calculate the bounding box of the polygon
     // double min_x = std::numeric_limits<double>::max();
