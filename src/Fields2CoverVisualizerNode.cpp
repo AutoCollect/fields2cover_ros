@@ -211,48 +211,50 @@ namespace fields2cover_ros {
     }
 
     field_2d_border_publisher_.publish(line_strip);
-    // //----------------------------------------------------------
-    // // Calculate the bounding box of the polygon
-    // double min_x = std::numeric_limits<double>::max();
-    // double max_x = std::numeric_limits<double>::lowest();
-    // double min_y = std::numeric_limits<double>::max();
-    // double max_y = std::numeric_limits<double>::lowest();
+    //----------------------------------------------------------
+    // occupancy grid 2D map creation
 
-    // for (const auto& point : polygon_st.polygon.points) {
-    //   if (point.x < min_x) min_x = point.x;
-    //   if (point.x > max_x) max_x = point.x;
-    //   if (point.y < min_y) min_y = point.y;
-    //   if (point.y > max_y) max_y = point.y;
-    // }
+    // Calculate the bounding box of the polygon
+    double min_x = std::numeric_limits<double>::max();
+    double max_x = std::numeric_limits<double>::lowest();
+    double min_y = std::numeric_limits<double>::max();
+    double max_y = std::numeric_limits<double>::lowest();
 
-    // // Calculate the width, height, and origin of the occupancy grid
-    // double width_m = max_x - min_x;
-    // double height_m = max_y - min_y;
-    // double resolution = 0.05; // 0.05 meter per cell, can be adjusted as needed
+    for (const auto& point : polygon_st.polygon.points) {
+      if (point.x < min_x) min_x = point.x;
+      if (point.x > max_x) max_x = point.x;
+      if (point.y < min_y) min_y = point.y;
+      if (point.y > max_y) max_y = point.y;
+    }
 
-    // int grid_width = static_cast<int>(width_m / resolution) + 1;
-    // int grid_height = static_cast<int>(height_m / resolution) + 1;
+    // Calculate the width, height, and origin of the occupancy grid
+    double width_m    = max_x - min_x;
+    double height_m   = max_y - min_y;
+    double resolution = 0.05; // 0.05 meter per cell, can be adjusted as needed
 
-    // // Initialize the occupancy grid
-    // initializeGrid(min_x, min_y, grid_width, grid_height, resolution);
+    int grid_width  = static_cast<int>(width_m / resolution)  + 1;
+    int grid_height = static_cast<int>(height_m / resolution) + 1;
 
-    // // Mark the polygon points in the occupancy grid
-    // for (const auto& point : polygon_st.polygon.points) {
-    //   int grid_x = static_cast<int>((point.x - min_x) / resolution);
-    //   int grid_y = static_cast<int>((point.y - min_y) / resolution);
+    // Initialize the occupancy grid
+    initializeGrid(min_x, min_y, grid_width, grid_height, resolution);
 
-    //   // Ensure the coordinates are within bounds
-    //   if (grid_x >= 0 && grid_x < occupancy_grid_.info.width &&
-    //     grid_y >= 0 && grid_y < occupancy_grid_.info.height) {
+    // Mark the polygon points in the occupancy grid
+    for (const auto& point : polygon_st.polygon.points) {
+      int grid_x = static_cast<int>((point.x - min_x) / resolution);
+      int grid_y = static_cast<int>((point.y - min_y) / resolution);
+
+      // Ensure the coordinates are within bounds
+      if (grid_x >= 0 && grid_x < occupancy_grid_.info.width &&
+        grid_y >= 0 && grid_y < occupancy_grid_.info.height) {
         
-    //     int index = grid_y * occupancy_grid_.info.width + grid_x;
-    //     occupancy_grid_.data[index] = 100;  // Mark the cell as occupied
-    //   }
-    // }
+        int index = grid_y * occupancy_grid_.info.width + grid_x;
+        occupancy_grid_.data[index] = 100;  // Mark the cell as occupied
+      }
+    }
 
-    // // Publish the updated occupancy grid
-    // map_pub_.publish(occupancy_grid_);
-    // //----------------------------------------------------------
+    // Publish the updated occupancy grid
+    map_pub_.publish(occupancy_grid_);
+    //----------------------------------------------------------
 
     // polygon_st.polygon.points.clear();
     
