@@ -58,7 +58,7 @@ namespace fields2cover_ros {
 
     fields_[0].setEPSGCoordSystem(4326);
     // Transform the field to the desired coordinate system
-    f2c::Transform::transform(fields_[0], "EPSG:27200");
+    f2c::Transform::transform(fields_[0], "EPSG:32760");
 
     //----------------------------------------------------------
     // auto ref_point = fields_[0].getRefPoint();
@@ -80,23 +80,32 @@ namespace fields2cover_ros {
     // TF buffer and listener
     tf2_ros::Buffer tfBuffer;
     tf2_ros::TransformListener tfListener(tfBuffer);
-    geometry_msgs::PointStamped utm_point_stamped;
+    geometry_msgs::PoseStamped utm_pose_stamped;
 
     // Create a stamped point in the 'utm' frame
-    utm_point_stamped.header.stamp = ros::Time::now();
-    utm_point_stamped.header.frame_id = "utm";
-    utm_point_stamped.point.x = utm_point.easting;
-    utm_point_stamped.point.y = utm_point.northing;
-    utm_point_stamped.point.z = utm_point.altitude;
+    utm_pose_stamped.header.stamp = ros::Time::now();
+    utm_pose_stamped.header.frame_id = "utm";
+    utm_pose_stamped.pose.position.x = utm_point.easting;
+    utm_pose_stamped.pose.position.y = utm_point.northing;
+    utm_pose_stamped.pose.position.z = utm_point.altitude;
+    utm_pose_stamped.pose.orientation.x = 0.0;
+    utm_pose_stamped.pose.orientation.y = 0.0;
+    utm_pose_stamped.pose.orientation.z = 0.0;
+    utm_pose_stamped.pose.orientation.w = 1.0;
 
     // Transform the UTM point to the 'map' frame using TF
     try {
       // Attempt to transform from "utm" to "map" within 1 second
-      map_point_stamped = tfBuffer.transform(utm_point_stamped, "map", ros::Duration(1.0));
-      ROS_ERROR("UTM -> map transform succeeded!");
-      ROS_INFO_STREAM("map_frame_point: x=" << map_point_stamped.point.x
-                                  << ", y=" << map_point_stamped.point.y
-                                  << ", z=" << map_point_stamped.point.z);
+      map_pose_stamped = tfBuffer.transform(utm_pose_stamped, "map", ros::Duration(1.0));
+      ROS_INFO("UTM -> map transform succeeded!");
+      ROS_INFO_STREAM("map_frame_pose: ");
+      ROS_INFO_STREAM("  position.x = " << map_pose_stamped.pose.position.x);
+      ROS_INFO_STREAM("  position.y = " << map_pose_stamped.pose.position.y);
+      ROS_INFO_STREAM("  position.z = " << map_pose_stamped.pose.position.z);
+      ROS_INFO_STREAM("  orientation.x = " << map_pose_stamped.pose.orientation.x);
+      ROS_INFO_STREAM("  orientation.y = " << map_pose_stamped.pose.orientation.y);
+      ROS_INFO_STREAM("  orientation.z = " << map_pose_stamped.pose.orientation.z);
+      ROS_INFO_STREAM("  orientation.w = " << map_pose_stamped.pose.orientation.w);
     }
     catch (tf2::TransformException &ex) {
       ROS_WARN_STREAM("Failed to transform UTM to map: " << ex.what());
@@ -136,23 +145,40 @@ namespace fields2cover_ros {
     geometry_msgs::PolygonStamped polygon_st;
     polygon_st.header.stamp = ros::Time::now();
     polygon_st.header.frame_id = frame_id_;
+
     conversor::ROS::to(f.getCellBorder(0), polygon_st.polygon);
 
-    // 1. Compute the offset between the polygon's first point and the map_point_stamped
-    double dx = map_point_stamped.point.x - polygon_st.polygon.points[0].x;
-    double dy = map_point_stamped.point.y - polygon_st.polygon.points[0].y;
-    double dz = map_point_stamped.point.z - polygon_st.polygon.points[0].z;
+    tf2::Quaternion q(
+      map_pose_stamped.pose.orientation.x,
+      map_pose_stamped.pose.orientation.y,
+      map_pose_stamped.pose.orientation.z,
+      map_pose_stamped.pose.orientation.w
+    );
+    tf2::Vector3 t(
+      map_pose_stamped.pose.position.x,
+      map_pose_stamped.pose.position.y,
+      map_pose_stamped.pose.position.z
+    );
 
-    // 2. Apply the translation to each point in the polygon
-    for (size_t i = 0; i < polygon_st.polygon.points.size(); ++i)
+    tf2::Transform transform;
+    transform.setOrigin(t);
+    transform.setRotation(q);
+
+    // Transform each point in the polygon
+    for (auto & pt : polygon_st.polygon.points)
     {
-      polygon_st.polygon.points[i].x += dx;
-      polygon_st.polygon.points[i].y += dy;
-      polygon_st.polygon.points[i].z += dz;
+      // Original point
+      tf2::Vector3 p_in(pt.x, pt.y, pt.z);
+
+      // Apply the transform
+      tf2::Vector3 p_out = transform * p_in;
+
+      pt.x = p_out.x();
+      pt.y = p_out.y();
+      pt.z = p_out.z();
     }
 
     field_polygon_publisher_.publish(polygon_st);
-
     //----------------------------------------------------------
     // // calculate 2d GPS and create a marker
     // visualization_msgs::Marker line_strip;

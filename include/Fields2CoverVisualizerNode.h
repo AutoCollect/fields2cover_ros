@@ -62,7 +62,7 @@ namespace fields2cover_ros {
       // trajectory publish frame id
       std::string frame_id_;
 
-      geometry_msgs::PointStamped map_point_stamped;
+      geometry_msgs::PoseStamped map_pose_stamped;
 
       // fixed pattern global plan 
       // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan_;

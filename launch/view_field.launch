@@ -5,7 +5,7 @@
   <node pkg="fields2cover_ros" type="visualizer_node" name="visualizer" output="screen">
     <!-- param name="plan_file_dir" type="string" value="$(find fields2cover_ros)/plan/"/          -->
     <!-- param name="field_file"    type="string" value="$(find fields2cover_ros)/data/test.json"/ -->
-    <param name="field_file"  type="string" value="/home/patrick/mapping_2.0_ws/data/darryl/upath/darryl_farm-2025-01-29_10.05.43/gps_polygon.json"/>
+    <param name="field_file"  type="string" value="/home/patrick/mapping_2.0_ws/data/darryl/upath/darryl_farm-2025-01-29_11.23.37/gps_polygon.json"/>
     <param name="interp_step" type="double" value="0.05"/>
   </node>
 
