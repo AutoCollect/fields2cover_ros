@@ -26,12 +26,17 @@ if ( ament_cmake_FOUND )
     find_package(sensor_msgs REQUIRED)
     find_package(nav_msgs REQUIRED)
 
+    find_package(geographic_msgs REQUIRED)
+    find_package(geodesy REQUIRED)
+
     set(dependencies
         rclcpp
         std_msgs
         geometry_msgs
         sensor_msgs
         nav_msgs
+        geographic_msgs
+        geodesy
     )
 
     include_directories(
@@ -74,6 +79,8 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
         geometry_msgs
         sensor_msgs
         dynamic_reconfigure
+        geographic_msgs
+        geodesy    
     )
 
     # Avoid compile the controls with colcon, as it is not supported
@@ -90,6 +97,8 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
         std_msgs
         geometry_msgs
         sensor_msgs
+        geographic_msgs
+        geodesy    
     )
 
 

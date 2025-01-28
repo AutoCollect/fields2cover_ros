@@ -18,6 +18,8 @@
 #include <geometry_msgs/PoseStamped.h>
 #include <nav_msgs/OccupancyGrid.h>
 
+#include <geometry_msgs/PointStamped.h>
+
 namespace fields2cover_ros {
 
   class VisualizerNode {
@@ -32,9 +34,10 @@ namespace fields2cover_ros {
 
       ros::Publisher field_polygon_publisher_;
       ros::Publisher field_no_headlands_publisher_;
-      ros::Publisher field_gps_publisher_;
       ros::Publisher field_swaths_publisher_;
       ros::Publisher map_pub_;
+
+      ros::Publisher traj_2d_marker_pub_;
       nav_msgs::OccupancyGrid occupancy_grid_;
 
       sensor_msgs::NavSatFix gps_;
@@ -55,6 +58,11 @@ namespace fields2cover_ros {
 
       // U path waypoints interpolation gap
       double interp_step_ = 0.01;
+
+      // trajectory publish frame id
+      std::string frame_id_;
+
+      geometry_msgs::PointStamped map_point_stamped;
 
       // fixed pattern global plan 
       // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan_;
