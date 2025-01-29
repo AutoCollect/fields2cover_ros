@@ -255,15 +255,33 @@ namespace fields2cover_ros {
     // Publish the updated occupancy grid
     map_pub_.publish(occupancy_grid_);
     //----------------------------------------------------------
+    polygon_st.polygon.points.clear();
+    //----------------------------------------------------------
 
-    // polygon_st.polygon.points.clear();
-    
-    // geometry_msgs::PolygonStamped polygon_st2;
-    // polygon_st2.header.stamp = ros::Time::now();
-    // polygon_st2.header.frame_id = frame_id_;
-    // conversor::ROS::to(no_headlands.getGeometry(0), polygon_st2.polygon);
-    // field_no_headlands_publisher_.publish(polygon_st2);
-    // polygon_st2.polygon.points.clear();
+    f2c::hg::ConstHL hl_gen_;
+    F2CCell no_headlands = hl_gen_.generateHeadlands(f, optim_.headland_width).getGeometry(0);
+
+    geometry_msgs::PolygonStamped polygon_st2;
+    polygon_st2.header.stamp = ros::Time::now();
+    polygon_st2.header.frame_id = frame_id_;
+    conversor::ROS::to(no_headlands.getGeometry(0), polygon_st2.polygon);
+
+    // Transform each point in the polygon
+    for (auto & pt : polygon_st2.polygon.points) {
+      // Original point
+      tf2::Vector3 p_in(pt.x, pt.y, pt.z);
+      // Apply the transform
+      tf2::Vector3 p_out = transform * p_in;
+
+      pt.x = p_out.x();
+      pt.y = p_out.y();
+      pt.z = p_out.z();
+    }
+
+    field_no_headlands_publisher_.publish(polygon_st2);
+    //----------------------------------------------------------
+    polygon_st2.polygon.points.clear();
+    //----------------------------------------------------------
 
     // F2CSwaths swaths;
     // f2c::sg::BruteForce swath_gen_;
