@@ -55,6 +55,7 @@ namespace fields2cover_ros {
 
       // filed file path
       std::string field_file_path_;
+      int path_file_seq_ = 0;
 
       // path reverse flag
       bool reverse_path_ {false};
@@ -89,8 +90,6 @@ namespace fields2cover_ros {
                                              const ros::Time& timestamp);
 
       void writePathToFile(const std::vector<geometry_msgs::PoseStamped>& plan, std::ofstream& path_file);
-      int path_file_seq_ = 0;
-      std::string path_file_dir_;
 
       void initializeGrid(double origin_x, double origin_y, int width, int height, double resolution);
 
