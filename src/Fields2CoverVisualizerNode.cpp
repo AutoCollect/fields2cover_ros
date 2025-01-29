@@ -282,95 +282,120 @@ namespace fields2cover_ros {
     //----------------------------------------------------------
     polygon_st2.polygon.points.clear();
     //----------------------------------------------------------
+    // swaths path generation
 
-    // F2CSwaths swaths;
-    // f2c::sg::BruteForce swath_gen_;
-    // if (automatic_angle_) {
-    //   switch (sg_objective_) {
-    //     case 0 : {
-    //       f2c::obj::SwathLength obj;
-    //       swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
-    //       break;
-    //     }
-    //     case 1 : {
-    //       f2c::obj::NSwath obj;
-    //       swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
-    //       break;
-    //     }
-    //     case 2 : {
-    //       f2c::obj::FieldCoverage obj;
-    //       swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
-    //       break;
-    //     }
-    //   }
-    // }
-    // else {
-    //   swaths = swath_gen_.generateSwaths(optim_.best_angle, robot_.op_width, no_headlands);
-    // }
+    F2CSwaths swaths;
+    f2c::sg::BruteForce swath_gen_;
+    if (automatic_angle_) {
+      switch (sg_objective_) {
+        case 0 : {
+          f2c::obj::SwathLength obj;
+          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
+          break;
+        }
+        case 1 : {
+          f2c::obj::NSwath obj;
+          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
+          break;
+        }
+        case 2 : {
+          f2c::obj::FieldCoverage obj;
+          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
+          break;
+        }
+      }
+    }
+    else {
+      swaths = swath_gen_.generateSwaths(optim_.best_angle, robot_.op_width, no_headlands);
+    }
 
-    // F2CSwaths route;
-    // switch (opt_route_type_) {
-    //   case 0 : {
-    //     f2c::rp::BoustrophedonOrder swath_sorter;
-    //     route = swath_sorter.genSortedSwaths(swaths);
-    //     break;
-    //   }
-    //   case 1 : {
-    //     f2c::rp::SnakeOrder swath_sorter;
-    //     route = swath_sorter.genSortedSwaths(swaths);
-    //     break;
-    //   }
-    //   case 2 : {
-    //     f2c::rp::SpiralOrder swath_sorter(6);
-    //     route = swath_sorter.genSortedSwaths(swaths);
-    //     break;
-    //   }
-    //   case 3 : {
-    //     f2c::rp::SpiralOrder swath_sorter(4);
-    //     route = swath_sorter.genSortedSwaths(swaths);
-    //     break;
-    //   }
-    // }
+    F2CSwaths route;
+    switch (opt_route_type_) {
+      case 0 : {
+        f2c::rp::BoustrophedonOrder swath_sorter;
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+      case 1 : {
+        f2c::rp::SnakeOrder swath_sorter;
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+      case 2 : {
+        f2c::rp::SpiralOrder swath_sorter(6);
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+      case 3 : {
+        f2c::rp::SpiralOrder swath_sorter(4);
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+    }
 
-    // F2CPath path;
-    // f2c::pp::PathPlanning path_planner;
+    F2CPath path;
+    f2c::pp::PathPlanning path_planner;
 
-    // switch(opt_turn_type_) {
-    //   case 0 : {
-    //     f2c::pp::DubinsCurves turn;
-    //     path = path_planner.searchBestPath(robot_, route, turn);
-    //     break;
-    //   }
-    //   case 1 : {
-    //     f2c::pp::DubinsCurvesCC turn;
-    //     path = path_planner.searchBestPath(robot_, route, turn);
-    //     break;
-    //   }
-    //   case 2 : {
-    //     f2c::pp::ReedsSheppCurves turn;
-    //     path = path_planner.searchBestPath(robot_, route, turn);
-    //     break;
-    //   }
-    //   case 3 : {
-    //     f2c::pp::ReedsSheppCurvesHC turn;
-    //     path = path_planner.searchBestPath(robot_, route, turn);
-    //     break;
-    //   }
-    // }
+    switch(opt_turn_type_) {
+      case 0 : {
+        f2c::pp::DubinsCurves turn;
+        path = path_planner.searchBestPath(robot_, route, turn);
+        break;
+      }
+      case 1 : {
+        f2c::pp::DubinsCurvesCC turn;
+        path = path_planner.searchBestPath(robot_, route, turn);
+        break;
+      }
+      case 2 : {
+        f2c::pp::ReedsSheppCurves turn;
+        path = path_planner.searchBestPath(robot_, route, turn);
+        break;
+      }
+      case 3 : {
+        f2c::pp::ReedsSheppCurvesHC turn;
+        path = path_planner.searchBestPath(robot_, route, turn);
+        break;
+      }
+    }
 
-    // visualization_msgs::Marker marker_swaths;
-    // marker_swaths.header.frame_id = frame_id_;
-    // marker_swaths.header.stamp = ros::Time::now();
-    // marker_swaths.action = visualization_msgs::Marker::ADD;
-    // marker_swaths.pose.orientation.w = 1.0;
-    // // marker_swaths.type = visualization_msgs::Marker::LINE_STRIP;
-    // marker_swaths.type = visualization_msgs::Marker::POINTS;
-    // marker_swaths.scale.x = 0.1;
-    // marker_swaths.scale.y = 0.1;
-    // marker_swaths.scale.z = 0.1;
-    // marker_swaths.color.b = 1.0;
-    // marker_swaths.color.a = 1.0;
+    visualization_msgs::Marker marker_swaths;
+    marker_swaths.header.frame_id = frame_id_;
+    marker_swaths.header.stamp = ros::Time::now();
+    marker_swaths.action = visualization_msgs::Marker::ADD;
+    marker_swaths.pose.orientation.w = 1.0;
+    // marker_swaths.type = visualization_msgs::Marker::LINE_STRIP;
+    marker_swaths.type = visualization_msgs::Marker::POINTS;
+    marker_swaths.scale.x = 0.25;
+    marker_swaths.scale.y = 0.25;
+    marker_swaths.scale.z = 0.1;
 
+    marker_swaths.color.r = 1.0;   // Red
+    marker_swaths.color.g = 1.0;   // Green
+    marker_swaths.color.b = 0.6;   // Blue (adjust to get the exact brightness you want)
+    marker_swaths.color.a = 1.0;   // Full opacity
+
+
+    // Transform each point in the polygon
+    for (auto&& s : path.states) {
+
+      geometry_msgs::Point ros_p;
+      conversor::ROS::to(s.point, ros_p);
+
+      // Original point
+      tf2::Vector3 p_in(ros_p.x, ros_p.y, ros_p.z);
+      // Apply the transform
+      tf2::Vector3 p_out = transform * p_in;
+
+      ros_p.x = p_out.x();
+      ros_p.y = p_out.y();
+      ros_p.z = p_out.z();
+
+      marker_swaths.points.push_back(ros_p);
+    }
+
+    field_swaths_publisher_.publish(marker_swaths);
+    //========================================================
     // geometry_msgs::PoseStamped pre_wpt;
     // pre_wpt.pose.position.x = path.states[0].point.getX();
     // pre_wpt.pose.position.y = path.states[0].point.getY();
@@ -409,7 +434,7 @@ namespace fields2cover_ros {
     //   pre_wpt = cur_wpt;
     // }
 
-    // //========================================================
+    //========================================================
     // if (reverse_path_) {
     //   ROS_ERROR("reverse path");
     //   // reserve orientation
@@ -418,9 +443,10 @@ namespace fields2cover_ros {
     //   }
     //   std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
     // }
-    // //========================================================
-    // // publish topics
+    //========================================================
+    // publish topics
     // field_swaths_publisher_.publish(marker_swaths);
+  
     // // publishFixedPatternPlan (fixed_pattern_plan, fixed_pattern_plan_publisher_);
     // publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
     // //========================================================
