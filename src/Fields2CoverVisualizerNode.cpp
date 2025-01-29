@@ -41,9 +41,10 @@ namespace fields2cover_ros {
     map_pub_ = public_node_handle_.advertise<nav_msgs::OccupancyGrid>("/map", 1, true);
 
     //----------------------------------------------------------
-    std::string field_file;
-    private_node_handle_.getParam("field_file", field_file);
-    // private_node_handle_.getParam("plan_file_dir", path_file_dir_);
+    // field file
+    private_node_handle_.param<std::string>("field_file_path", field_file_path_, "/path/to/json");
+    std::string field_file = field_file_path_ + "/gps_polygon.json";
+    ROS_INFO("[Debug] ROS field file: %s", field_file.c_str());
 
     // U path waypoints interpolation gap
     private_node_handle_.param("interp_step", interp_step_, 0.01);

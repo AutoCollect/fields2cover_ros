@@ -53,6 +53,9 @@ namespace fields2cover_ros {
       int opt_turn_type_ {0};
       int opt_route_type_ {0};
 
+      // filed file path
+      std::string field_file_path_;
+
       // path reverse flag
       bool reverse_path_ {false};
 
