@@ -64,10 +64,6 @@ namespace fields2cover_ros {
 
       geometry_msgs::PoseStamped map_pose_stamped;
 
-      // fixed pattern global plan 
-      // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan_;
-      ros::Publisher fixed_pattern_plan_publisher_;
-
       // fixed pattern global plan points
       ros::Publisher fixed_pattern_plan_pose_array_pub_;
 

@@ -34,15 +34,13 @@ namespace fields2cover_ros {
     field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/no_headlands", 1, true);
     field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/swaths",       1, true);
 
-    // Publisher for the occupancy grid map
-    map_pub_ = public_node_handle_.advertise<nav_msgs::OccupancyGrid>("/map", 1, true);
-
-    // fixed pattern global plan publish
-    fixed_pattern_plan_publisher_ = public_node_handle_.advertise<nav_msgs::Path>("/plan", 1, true);
-
     // Publisher for PoseArray
     fixed_pattern_plan_pose_array_pub_ = public_node_handle_.advertise<geometry_msgs::PoseArray>("/waypoints", 10, true);
 
+    // Publisher for the occupancy grid map
+    map_pub_ = public_node_handle_.advertise<nav_msgs::OccupancyGrid>("/map", 1, true);
+
+    //----------------------------------------------------------
     std::string field_file;
     private_node_handle_.getParam("field_file", field_file);
     // private_node_handle_.getParam("plan_file_dir", path_file_dir_);
@@ -366,15 +364,14 @@ namespace fields2cover_ros {
     marker_swaths.pose.orientation.w = 1.0;
     // marker_swaths.type = visualization_msgs::Marker::LINE_STRIP;
     marker_swaths.type = visualization_msgs::Marker::POINTS;
-    marker_swaths.scale.x = 0.25;
-    marker_swaths.scale.y = 0.25;
+    marker_swaths.scale.x = 0.5;
+    marker_swaths.scale.y = 0.5;
     marker_swaths.scale.z = 0.1;
 
-    marker_swaths.color.r = 1.0;   // Red
-    marker_swaths.color.g = 1.0;   // Green
-    marker_swaths.color.b = 0.6;   // Blue (adjust to get the exact brightness you want)
+    marker_swaths.color.r = 0.0;   // Red
+    marker_swaths.color.g = 0.0;   // Green
+    marker_swaths.color.b = 1.0;   // Blue (adjust to get the exact brightness you want)
     marker_swaths.color.a = 1.0;   // Full opacity
-
 
     // Transform each point in the polygon
     for (auto&& s : path.states) {
@@ -396,67 +393,88 @@ namespace fields2cover_ros {
 
     field_swaths_publisher_.publish(marker_swaths);
     //========================================================
-    // geometry_msgs::PoseStamped pre_wpt;
-    // pre_wpt.pose.position.x = path.states[0].point.getX();
-    // pre_wpt.pose.position.y = path.states[0].point.getY();
+    // interpolation with waypoints
 
-    // double wpt_gap_thresh_hold = 1.0;
-    // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
+    geometry_msgs::PoseStamped pre_wpt;
+    pre_wpt.pose.position.x = path.states[0].point.getX();
+    pre_wpt.pose.position.y = path.states[0].point.getY();
 
-    // for (auto&& s : path.states) {
-    //   geometry_msgs::PoseStamped cur_wpt;
-    //   cur_wpt.header.frame_id = frame_id_;
-    //   cur_wpt.header.stamp = marker_swaths.header.stamp;
+    double wpt_gap_thresh_hold = 1.0;
+    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
 
-    //   conversor::ROS::to(s.point, s.angle, cur_wpt);
-    //   double dist = std::hypot((pre_wpt.pose.position.x - cur_wpt.pose.position.x), 
-    //                            (pre_wpt.pose.position.y - cur_wpt.pose.position.y));
+    for (auto&& s : path.states) {
+      geometry_msgs::PoseStamped cur_wpt;
+      cur_wpt.header.frame_id = frame_id_;
+      cur_wpt.header.stamp = marker_swaths.header.stamp;
 
-    //   if (dist > wpt_gap_thresh_hold) {
-    //     int num_samples = dist / interp_step_;
-    //     std::vector<geometry_msgs::PoseStamped> interp_path;
-    //     interpolatePoints(pre_wpt, cur_wpt, num_samples, cur_wpt.header.frame_id, cur_wpt.header.stamp, interp_path);
-    //     if (!interp_path.empty() && interp_path.size() > 0) {
-    //       // Add the interp_path to the end of the marker_swaths.points vector
-    //       std::vector<geometry_msgs::Point> interp_pts;
-    //       for (auto& wpt : interp_path) {
-    //         interp_pts.push_back(poseStampedToPoint(wpt));
-    //       }
-    //       marker_swaths.points.insert(marker_swaths.points.end(), interp_pts.begin(), interp_pts.end());
-    //       fixed_pattern_plan.insert(fixed_pattern_plan.end(), interp_path.begin(), interp_path.end());
-    //     }
-    //   }
+      conversor::ROS::to(s.point, s.angle, cur_wpt);
+      double dist = std::hypot((pre_wpt.pose.position.x - cur_wpt.pose.position.x), 
+                               (pre_wpt.pose.position.y - cur_wpt.pose.position.y));
 
-    //   marker_swaths.points.push_back(cur_wpt.pose.position);
-    //   fixed_pattern_plan.push_back(cur_wpt);
+      if (dist > wpt_gap_thresh_hold) {
+        int num_samples = dist / interp_step_;
+        std::vector<geometry_msgs::PoseStamped> interp_path;
+        interpolatePoints(pre_wpt, cur_wpt, num_samples, cur_wpt.header.frame_id, cur_wpt.header.stamp, interp_path);
+        if (!interp_path.empty() && interp_path.size() > 0) {
+          // Add the interp_path to the end of the marker_swaths.points vector
+          std::vector<geometry_msgs::Point> interp_pts;
+          for (auto& wpt : interp_path) {
+            interp_pts.push_back(poseStampedToPoint(wpt));
+          }
+          fixed_pattern_plan.insert(fixed_pattern_plan.end(), interp_path.begin(), interp_path.end());
+        }
+      }
 
-    //   // update pre wpt for next loop
-    //   pre_wpt = cur_wpt;
-    // }
+      fixed_pattern_plan.push_back(cur_wpt);
+      // update pre wpt for next loop
+      pre_wpt = cur_wpt;
+    }
+    //----------------------------------------------------------
+    // Transform each point in the polygon
+    for (auto & pose_stamped : fixed_pattern_plan) // Use reference to modify in place
+    {
+      // Convert to tf2::Transform
+      tf2::Transform tf_pose;
+      tf2::fromMsg(pose_stamped.pose, tf_pose);
 
-    //========================================================
-    // if (reverse_path_) {
-    //   ROS_ERROR("reverse path");
-    //   // reserve orientation
-    //   for (auto& wpt : fixed_pattern_plan) {
-    //     reverseOrientation(wpt);
-    //   }
-    //   std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
-    // }
-    //========================================================
+      // Apply the transformation
+      tf2::Transform transformed_tf_pose = transform * tf_pose;
+
+      // Convert back to geometry_msgs::Pose
+      geometry_msgs::Pose transformed_pose;
+      transformed_pose.position.x = transformed_tf_pose.getOrigin().x();
+      transformed_pose.position.y = transformed_tf_pose.getOrigin().y();
+      transformed_pose.position.z = transformed_tf_pose.getOrigin().z();
+
+      tf2::Quaternion q = transformed_tf_pose.getRotation();
+      transformed_pose.orientation.x = q.x();
+      transformed_pose.orientation.y = q.y();
+      transformed_pose.orientation.z = q.z();
+      transformed_pose.orientation.w = q.w();
+
+      // Update the original pose_stamped
+      pose_stamped.pose = transformed_pose;
+    }
+    //----------------------------------------------------------
+    if (reverse_path_) {
+      ROS_ERROR("reverse path");
+      // reserve orientation
+      for (auto& wpt : fixed_pattern_plan) {
+        reverseOrientation(wpt);
+      }
+      std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
+    }
+    //----------------------------------------------------------
     // publish topics
-    // field_swaths_publisher_.publish(marker_swaths);
-  
-    // // publishFixedPatternPlan (fixed_pattern_plan, fixed_pattern_plan_publisher_);
-    // publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
-    // //========================================================
-    // // std::ofstream path_file;
-    // // std::string path_file_name = path_file_dir_ + "path_sample_" + std::to_string(path_file_seq_++) + ".txt";
-    // // path_file.open(path_file_name);
-    // // writePathToFile(fixed_pattern_plan, path_file);
-    // // path_file.close();
-    // // ROS_INFO("%s generated", path_file_name.c_str());
-    // //========================================================
+    publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
+    //========================================================
+    // std::ofstream path_file;
+    // std::string path_file_name = path_file_dir_ + "path_sample_" + std::to_string(path_file_seq_++) + ".txt";
+    // path_file.open(path_file_name);
+    // writePathToFile(fixed_pattern_plan, path_file);
+    // path_file.close();
+    // ROS_INFO("%s generated", path_file_name.c_str());
+    //========================================================
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
