@@ -10,19 +10,23 @@
 
 #include <fstream>
 #include <iostream>
-#include <dynamic_reconfigure/server.h>
+
 #include <fields2cover_ros/F2CConfig.h>
+
+#include <dynamic_reconfigure/server.h>
 #include <nav_msgs/Path.h> // for fixed pattern plan topic publish
 #include <geometry_msgs/PoseArray.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // for converting quaternions
+#include <tf2_ros/transform_listener.h>
 
 #include <geodesy/utm.h>
 #include <geometry_msgs/Point.h>
-#include <tf2_ros/transform_listener.h>
 
+#include <nlohmann/json.hpp>
+
+using json = nlohmann::json;
 using namespace std;
-
 
 namespace fields2cover_ros {
     
@@ -60,20 +64,20 @@ namespace fields2cover_ros {
     f2c::Transform::transform(fields_[0], "EPSG:32760");
 
     //----------------------------------------------------------
-    // auto ref_point = fields_[0].getRefPoint();
-    // ROS_ERROR("%f, %f, %f", ref_point.getX(), ref_point.getY(), ref_point.getZ());
-    auto ref_gps_point = f2c::Transform::getRefPointInGPS(fields_[0]);
-    ROS_ERROR("%f, %f, %f", ref_gps_point.getX(), ref_gps_point.getY(), ref_gps_point.getZ());
+    // fetch gps2map_transform
+    if (!parseGeoJsonPose(field_file, gps2map_transform_)) {
+      auto ref_gps_point = f2c::Transform::getRefPointInGPS(fields_[0]);
+      ROS_ERROR("%f, %f, %f", ref_gps_point.getX(), ref_gps_point.getY(), ref_gps_point.getZ());
 
-    // Convert GPS (latitude, longitude) to GeoPoint
-    geographic_msgs::GeoPoint gps_point;
-    gps_point.longitude = ref_gps_point.getX();
-    gps_point.latitude  = ref_gps_point.getY();
-    gps_point.altitude  = ref_gps_point.getZ();
+      // Convert GPS (latitude, longitude) to GeoPoint
+      geographic_msgs::GeoPoint gps_point;
+      gps_point.longitude = ref_gps_point.getX();
+      gps_point.latitude  = ref_gps_point.getY();
+      gps_point.altitude  = ref_gps_point.getZ();
 
-    gps2map_transform_ = transformGPStoMap(gps_point);
+      gps2map_transform_ = transformGPStoMap(gps_point);
+    }
     //----------------------------------------------------------
-
     robot_.cruise_speed = 2.0;
     robot_.setMinRadius(2.0);
     double headland_width = 3.0*robot_.op_width;
@@ -647,6 +651,79 @@ namespace fields2cover_ros {
 
       // Update the original pose_stamped
       pose_stamped.pose = transformed_pose;
+    }
+  }
+
+  bool VisualizerNode::parseGeoJsonPose(const std::string& geojson_file,
+                                        geometry_msgs::PoseStamped& pose_msg)
+  {
+    // Open the file
+    std::ifstream file(geojson_file);
+    if (!file.is_open()) {
+      ROS_ERROR("Failed to open GeoJSON file: %s", geojson_file.c_str());
+      return false;
+    }
+
+    // Read the file contents into a JSON object
+    json geojson;
+    try {
+      file >> geojson;
+    } catch (const json::parse_error& e) {
+      ROS_ERROR("Error parsing JSON file: %s", e.what());
+      return false;
+    }
+
+    // Check if "features" array exists and has at least one entry
+    if (!geojson.contains("features") || !geojson["features"].is_array() || geojson["features"].empty()) {
+      ROS_ERROR("GeoJSON does not contain 'features' array or it is empty.");
+      return false;
+    }
+
+    // Access the first feature
+    json feature = geojson["features"][0];
+
+    // Ensure "properties" exist
+    if (!feature.contains("properties")) {
+      ROS_ERROR("Missing 'properties' in GeoJSON feature.");
+      return false;
+    }
+
+    json properties = feature["properties"];
+
+    // Ensure "Position" and "Orientation" exist in properties
+    if (!properties.contains("Position") || !properties.contains("Orientation")) {
+      ROS_ERROR("Missing 'Position' or 'Orientation' inside 'properties'.");
+      return false;
+    }
+
+    try {
+      // Extract Position from properties
+      pose_msg.pose.position.x = properties["Position"].value("x", 0.0);
+      pose_msg.pose.position.y = properties["Position"].value("y", 0.0);
+      pose_msg.pose.position.z = properties["Position"].value("z", 0.0);
+
+      // Extract Orientation from properties
+      pose_msg.pose.orientation.w = properties["Orientation"].value("w", 1.0);
+      pose_msg.pose.orientation.x = properties["Orientation"].value("x", 0.0);
+      pose_msg.pose.orientation.y = properties["Orientation"].value("y", 0.0);
+      pose_msg.pose.orientation.z = properties["Orientation"].value("z", 0.0);
+
+      ROS_INFO_STREAM("Successfully extracted Pose from GeoJSON: ");
+      ROS_INFO_STREAM("  position.x = " << pose_msg.pose.position.x);
+      ROS_INFO_STREAM("  position.y = " << pose_msg.pose.position.y);
+      ROS_INFO_STREAM("  position.z = " << pose_msg.pose.position.z);
+      ROS_INFO_STREAM("  orientation.x = " << pose_msg.pose.orientation.x);
+      ROS_INFO_STREAM("  orientation.y = " << pose_msg.pose.orientation.y);
+      ROS_INFO_STREAM("  orientation.z = " << pose_msg.pose.orientation.z);
+      ROS_INFO_STREAM("  orientation.w = " << pose_msg.pose.orientation.w);
+
+      // Set timestamp and frame_id
+      pose_msg.header.stamp = ros::Time::now();
+      pose_msg.header.frame_id = frame_id_;
+      return true;
+    } catch (const json::exception& e) {
+      ROS_ERROR("Error extracting data from JSON: %s", e.what());
+      return false;
     }
   }
 }

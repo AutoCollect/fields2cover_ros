@@ -110,6 +110,8 @@ namespace fields2cover_ros {
 
       // reverse orientation
       void reverseOrientation(geometry_msgs::PoseStamped& pose);
+
+      bool parseGeoJsonPose(const std::string& geojson_file, geometry_msgs::PoseStamped& pose_msg);
   };
 }
 
