@@ -8,17 +8,19 @@
 #define FIELDS2COVER_ROS_VISUALIZER_NODE_H_
 
 #include <ros/ros.h>
+#include <dynamic_reconfigure/server.h>
+
 #include <visualization_msgs/Marker.h>
 #include <std_msgs/ColorRGBA.h>
-#include <geometry_msgs/PolygonStamped.h>
 #include <sensor_msgs/NavSatFix.h>
-#include <dynamic_reconfigure/server.h>
+#include <geometry_msgs/PolygonStamped.h>
+#include <geometry_msgs/PoseStamped.h>
+#include <geometry_msgs/PointStamped.h>
+#include <nav_msgs/OccupancyGrid.h>
+#include <geographic_msgs/GeoPoint.h>
+
 #include <fields2cover_ros/F2CConfig.h>
 #include <fields2cover.h>
-#include <geometry_msgs/PoseStamped.h>
-#include <nav_msgs/OccupancyGrid.h>
-
-#include <geometry_msgs/PointStamped.h>
 
 namespace fields2cover_ros {
 
@@ -66,10 +68,23 @@ namespace fields2cover_ros {
       // trajectory publish frame id
       std::string frame_id_;
 
-      geometry_msgs::PoseStamped map_pose_stamped;
+      // first gps transfrom from utm frame to map frame
+      geometry_msgs::PoseStamped gps2map_transform_;
 
       // fixed pattern global plan points
       ros::Publisher fixed_pattern_plan_pose_array_pub_;
+
+      // transform GPS point to map frame coord pose
+      geometry_msgs::PoseStamped transformGPStoMap(const geographic_msgs::GeoPoint& gps_point);
+
+      // transform PolygonStamped points coord
+      void transformPoints(const geometry_msgs::PoseStamped& poseTransform, geometry_msgs::PolygonStamped& polygon);
+      
+      // transform Path -> Marker points coord 
+      void transformPoints(const geometry_msgs::PoseStamped& poseTransform, const F2CPath& path, visualization_msgs::Marker& marker);
+
+      // transform poseVec
+      void transformPoses (const geometry_msgs::PoseStamped& poseTransform, std::vector<geometry_msgs::PoseStamped>& poseVec);
 
       void publishFixedPatternPlan     (const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub);
       void publishFixedPatternWayPoints(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub);

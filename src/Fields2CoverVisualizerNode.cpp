@@ -18,7 +18,6 @@
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // for converting quaternions
 
 #include <geodesy/utm.h>
-#include <geographic_msgs/GeoPoint.h>
 #include <geometry_msgs/Point.h>
 #include <tf2_ros/transform_listener.h>
 
@@ -66,50 +65,13 @@ namespace fields2cover_ros {
     auto ref_gps_point = f2c::Transform::getRefPointInGPS(fields_[0]);
     ROS_ERROR("%f, %f, %f", ref_gps_point.getX(), ref_gps_point.getY(), ref_gps_point.getZ());
 
-    // 176.130892, -40.144452, 0.632197
     // Convert GPS (latitude, longitude) to GeoPoint
     geographic_msgs::GeoPoint gps_point;
     gps_point.longitude = ref_gps_point.getX();
     gps_point.latitude  = ref_gps_point.getY();
     gps_point.altitude  = ref_gps_point.getZ();
 
-    // Convert GeoPoint to UTMPoint
-    geodesy::UTMPoint utm_point(gps_point);
-    ROS_ERROR("%f, %f, %f", utm_point.easting, utm_point.northing, utm_point.altitude);
-
-    // TF buffer and listener
-    tf2_ros::Buffer tfBuffer;
-    tf2_ros::TransformListener tfListener(tfBuffer);
-    geometry_msgs::PoseStamped utm_pose_stamped;
-
-    // Create a stamped point in the 'utm' frame
-    utm_pose_stamped.header.stamp = ros::Time::now();
-    utm_pose_stamped.header.frame_id = "utm";
-    utm_pose_stamped.pose.position.x = utm_point.easting;
-    utm_pose_stamped.pose.position.y = utm_point.northing;
-    utm_pose_stamped.pose.position.z = utm_point.altitude;
-    utm_pose_stamped.pose.orientation.x = 0.0;
-    utm_pose_stamped.pose.orientation.y = 0.0;
-    utm_pose_stamped.pose.orientation.z = 0.0;
-    utm_pose_stamped.pose.orientation.w = 1.0;
-
-    // Transform the UTM point to the 'map' frame using TF
-    try {
-      // Attempt to transform from "utm" to "map" within 1 second
-      map_pose_stamped = tfBuffer.transform(utm_pose_stamped, "map", ros::Duration(1.0));
-      ROS_INFO("UTM -> map transform succeeded!");
-      ROS_INFO_STREAM("map_frame_pose: ");
-      ROS_INFO_STREAM("  position.x = " << map_pose_stamped.pose.position.x);
-      ROS_INFO_STREAM("  position.y = " << map_pose_stamped.pose.position.y);
-      ROS_INFO_STREAM("  position.z = " << map_pose_stamped.pose.position.z);
-      ROS_INFO_STREAM("  orientation.x = " << map_pose_stamped.pose.orientation.x);
-      ROS_INFO_STREAM("  orientation.y = " << map_pose_stamped.pose.orientation.y);
-      ROS_INFO_STREAM("  orientation.z = " << map_pose_stamped.pose.orientation.z);
-      ROS_INFO_STREAM("  orientation.w = " << map_pose_stamped.pose.orientation.w);
-    }
-    catch (tf2::TransformException &ex) {
-      ROS_WARN_STREAM("Failed to transform UTM to map: " << ex.what());
-    }
+    gps2map_transform_ = transformGPStoMap(gps_point);
     //----------------------------------------------------------
 
     robot_.cruise_speed = 2.0;
@@ -146,37 +108,9 @@ namespace fields2cover_ros {
     polygon_st.header.stamp = ros::Time::now();
     polygon_st.header.frame_id = frame_id_;
 
+    // transform polygon points coord
     conversor::ROS::to(f.getCellBorder(0), polygon_st.polygon);
-
-    tf2::Quaternion q(
-      map_pose_stamped.pose.orientation.x,
-      map_pose_stamped.pose.orientation.y,
-      map_pose_stamped.pose.orientation.z,
-      map_pose_stamped.pose.orientation.w
-    );
-    tf2::Vector3 t(
-      map_pose_stamped.pose.position.x,
-      map_pose_stamped.pose.position.y,
-      map_pose_stamped.pose.position.z
-    );
-
-    tf2::Transform transform;
-    transform.setOrigin(t);
-    transform.setRotation(q);
-
-    // Transform each point in the polygon
-    for (auto & pt : polygon_st.polygon.points)
-    {
-      // Original point
-      tf2::Vector3 p_in(pt.x, pt.y, pt.z);
-
-      // Apply the transform
-      tf2::Vector3 p_out = transform * p_in;
-
-      pt.x = p_out.x();
-      pt.y = p_out.y();
-      pt.z = p_out.z();
-    }
+    transformPoints(gps2map_transform_, polygon_st);
 
     field_polygon_publisher_.publish(polygon_st);
     //----------------------------------------------------------
@@ -256,6 +190,7 @@ namespace fields2cover_ros {
     //----------------------------------------------------------
     polygon_st.polygon.points.clear();
     //----------------------------------------------------------
+    // no_headlands publisher
 
     f2c::hg::ConstHL hl_gen_;
     F2CCell no_headlands = hl_gen_.generateHeadlands(f, optim_.headland_width).getGeometry(0);
@@ -263,19 +198,10 @@ namespace fields2cover_ros {
     geometry_msgs::PolygonStamped polygon_st2;
     polygon_st2.header.stamp = ros::Time::now();
     polygon_st2.header.frame_id = frame_id_;
+
+    // transfrom no_headlands points coord
     conversor::ROS::to(no_headlands.getGeometry(0), polygon_st2.polygon);
-
-    // Transform each point in the polygon
-    for (auto & pt : polygon_st2.polygon.points) {
-      // Original point
-      tf2::Vector3 p_in(pt.x, pt.y, pt.z);
-      // Apply the transform
-      tf2::Vector3 p_out = transform * p_in;
-
-      pt.x = p_out.x();
-      pt.y = p_out.y();
-      pt.z = p_out.z();
-    }
+    transformPoints(gps2map_transform_, polygon_st2);
 
     field_no_headlands_publisher_.publish(polygon_st2);
     //----------------------------------------------------------
@@ -375,22 +301,7 @@ namespace fields2cover_ros {
     marker_swaths.color.a = 1.0;   // Full opacity
 
     // Transform each point in the polygon
-    for (auto&& s : path.states) {
-
-      geometry_msgs::Point ros_p;
-      conversor::ROS::to(s.point, ros_p);
-
-      // Original point
-      tf2::Vector3 p_in(ros_p.x, ros_p.y, ros_p.z);
-      // Apply the transform
-      tf2::Vector3 p_out = transform * p_in;
-
-      ros_p.x = p_out.x();
-      ros_p.y = p_out.y();
-      ros_p.z = p_out.z();
-
-      marker_swaths.points.push_back(ros_p);
-    }
+    transformPoints(gps2map_transform_, path, marker_swaths);
 
     field_swaths_publisher_.publish(marker_swaths);
     //========================================================
@@ -430,33 +341,12 @@ namespace fields2cover_ros {
       // update pre wpt for next loop
       pre_wpt = cur_wpt;
     }
+
     //----------------------------------------------------------
     // Transform each point in the polygon
-    for (auto & pose_stamped : fixed_pattern_plan) // Use reference to modify in place
-    {
-      // Convert to tf2::Transform
-      tf2::Transform tf_pose;
-      tf2::fromMsg(pose_stamped.pose, tf_pose);
-
-      // Apply the transformation
-      tf2::Transform transformed_tf_pose = transform * tf_pose;
-
-      // Convert back to geometry_msgs::Pose
-      geometry_msgs::Pose transformed_pose;
-      transformed_pose.position.x = transformed_tf_pose.getOrigin().x();
-      transformed_pose.position.y = transformed_tf_pose.getOrigin().y();
-      transformed_pose.position.z = transformed_tf_pose.getOrigin().z();
-
-      tf2::Quaternion q = transformed_tf_pose.getRotation();
-      transformed_pose.orientation.x = q.x();
-      transformed_pose.orientation.y = q.y();
-      transformed_pose.orientation.z = q.z();
-      transformed_pose.orientation.w = q.w();
-
-      // Update the original pose_stamped
-      pose_stamped.pose = transformed_pose;
-    }
+    transformPoses(gps2map_transform_, fixed_pattern_plan);
     //----------------------------------------------------------
+
     if (reverse_path_) {
       ROS_ERROR("reverse path");
       // reserve orientation
@@ -597,6 +487,166 @@ namespace fields2cover_ros {
     // Set the new orientation in the pose
     pose.pose.orientation = tf2::toMsg(q_new);
   }
+
+  // transform GPS point to map frame coord pose
+  geometry_msgs::PoseStamped VisualizerNode::transformGPStoMap(const geographic_msgs::GeoPoint& gps_point) {
+    
+    // Convert GeoPoint to UTMPoint
+    geodesy::UTMPoint utm_point(gps_point);
+    ROS_ERROR("%f, %f, %f", utm_point.easting, utm_point.northing, utm_point.altitude);
+
+    // TF buffer and listener
+    tf2_ros::Buffer tfBuffer;
+    tf2_ros::TransformListener tfListener(tfBuffer);
+    
+    // GPS in utm frame coord
+    geometry_msgs::PoseStamped utm_pose_stamped;
+    // GPS in map frame coord
+    geometry_msgs::PoseStamped map_pose_stamped;
+
+    // Create a stamped point in the 'utm' frame
+    utm_pose_stamped.header.stamp = ros::Time::now();
+    utm_pose_stamped.header.frame_id = "utm";
+    utm_pose_stamped.pose.position.x = utm_point.easting;
+    utm_pose_stamped.pose.position.y = utm_point.northing;
+    utm_pose_stamped.pose.position.z = utm_point.altitude;
+    utm_pose_stamped.pose.orientation.x = 0.0;
+    utm_pose_stamped.pose.orientation.y = 0.0;
+    utm_pose_stamped.pose.orientation.z = 0.0;
+    utm_pose_stamped.pose.orientation.w = 1.0;
+
+    // Transform the UTM point to the 'map' frame using TF
+    try {
+      // Attempt to transform from "utm" to "map" within 1 second
+      map_pose_stamped = tfBuffer.transform(utm_pose_stamped, "map", ros::Duration(2.0));
+      ROS_INFO("UTM -> map transform succeeded!");
+      ROS_INFO_STREAM("map_frame_pose: ");
+      ROS_INFO_STREAM("  position.x = " << map_pose_stamped.pose.position.x);
+      ROS_INFO_STREAM("  position.y = " << map_pose_stamped.pose.position.y);
+      ROS_INFO_STREAM("  position.z = " << map_pose_stamped.pose.position.z);
+      ROS_INFO_STREAM("  orientation.x = " << map_pose_stamped.pose.orientation.x);
+      ROS_INFO_STREAM("  orientation.y = " << map_pose_stamped.pose.orientation.y);
+      ROS_INFO_STREAM("  orientation.z = " << map_pose_stamped.pose.orientation.z);
+      ROS_INFO_STREAM("  orientation.w = " << map_pose_stamped.pose.orientation.w);
+    }
+    catch (tf2::TransformException &ex) {
+      ROS_WARN_STREAM("Failed to transform UTM to map: " << ex.what());
+    }
+
+    return map_pose_stamped;
+  }
+
+  // transform PolygonStamped points coord
+  void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, geometry_msgs::PolygonStamped& polygon) {
+
+    tf2::Quaternion q(
+      poseTransform.pose.orientation.x,
+      poseTransform.pose.orientation.y,
+      poseTransform.pose.orientation.z,
+      poseTransform.pose.orientation.w
+    );
+    tf2::Vector3 t(
+      poseTransform.pose.position.x,
+      poseTransform.pose.position.y,
+      poseTransform.pose.position.z
+    );
+
+    tf2::Transform transform;
+    transform.setOrigin(t);
+    transform.setRotation(q);
+
+    // Transform each point in the polygon
+    for (auto & pt : polygon.polygon.points) {
+      // Original point
+      tf2::Vector3 p_in(pt.x, pt.y, pt.z);
+
+      // Apply the transform
+      tf2::Vector3 p_out = transform * p_in;
+
+      pt.x = p_out.x();
+      pt.y = p_out.y();
+      pt.z = p_out.z();
+    }
+  }
+
+  // transform Path -> Marker points coord
+  void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, const F2CPath& path, visualization_msgs::Marker& marker) {
+
+    tf2::Quaternion q(
+      poseTransform.pose.orientation.x,
+      poseTransform.pose.orientation.y,
+      poseTransform.pose.orientation.z,
+      poseTransform.pose.orientation.w
+    );
+    tf2::Vector3 t(
+      poseTransform.pose.position.x,
+      poseTransform.pose.position.y,
+      poseTransform.pose.position.z
+    );
+
+    tf2::Transform transform;
+    transform.setOrigin(t);
+    transform.setRotation(q);
+
+    // Transform each point in the polygon
+    for (auto&& s : path.states) {
+      geometry_msgs::Point ros_p;
+      conversor::ROS::to(s.point, ros_p);
+
+      // Original point
+      tf2::Vector3 p_in(ros_p.x, ros_p.y, ros_p.z);
+      // Apply the transform
+      tf2::Vector3 p_out = transform * p_in;
+
+      ros_p.x = p_out.x();
+      ros_p.y = p_out.y();
+      ros_p.z = p_out.z();
+
+      marker.points.push_back(ros_p);
+    }
+  }
+
+  // transform poseVec
+  void VisualizerNode::transformPoses (const geometry_msgs::PoseStamped& poseTransform, std::vector<geometry_msgs::PoseStamped>& poseVec) {
+
+    tf2::Quaternion q(
+      poseTransform.pose.orientation.x,
+      poseTransform.pose.orientation.y,
+      poseTransform.pose.orientation.z,
+      poseTransform.pose.orientation.w
+    );
+    tf2::Vector3 t(
+      poseTransform.pose.position.x,
+      poseTransform.pose.position.y,
+      poseTransform.pose.position.z
+    );
+
+    tf2::Transform transform;
+    transform.setOrigin(t);
+    transform.setRotation(q);
+
+    for (auto & pose_stamped : poseVec) { // Use reference to modify in place
+      // Convert to tf2::Transform
+      tf2::Transform tf_pose;
+      tf2::fromMsg(pose_stamped.pose, tf_pose);
+
+      // Apply the transformation
+      tf2::Transform transformed_tf_pose = transform * tf_pose;
+
+      // Convert back to geometry_msgs::Pose
+      geometry_msgs::Pose transformed_pose;
+      transformed_pose.position.x = transformed_tf_pose.getOrigin().x();
+      transformed_pose.position.y = transformed_tf_pose.getOrigin().y();
+      transformed_pose.position.z = transformed_tf_pose.getOrigin().z();
+
+      tf2::Quaternion q = transformed_tf_pose.getRotation();
+      transformed_pose.orientation.x = q.x();
+      transformed_pose.orientation.y = q.y();
+      transformed_pose.orientation.z = q.z();
+      transformed_pose.orientation.w = q.w();
+
+      // Update the original pose_stamped
+      pose_stamped.pose = transformed_pose;
+    }
+  }
 }
-
-

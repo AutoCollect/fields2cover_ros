@@ -2,7 +2,7 @@
   <!-- configuration -->
   <arg name="rviz" default="false"/>
   <arg name="field_file_path" 
-       default="/home/patrick/mapping_2.0_ws/data/darryl/upath/darryl_farm-2025-01-29_16.33.38"/>
+       default="/home/patrick/mapping_2.0_ws/data/darryl/upath/darryl_farm-2025-01-30_10.48.08"/>
 
   <!-- upath generator -->
   <node pkg="fields2cover_ros" type="visualizer_node" name="visualizer" output="screen">
