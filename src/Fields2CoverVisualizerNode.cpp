@@ -11,6 +11,9 @@
 #include <fstream>
 #include <iostream>
 
+#include <sys/stat.h>   // For stat()
+#include <cstdio>       // For remove()
+
 #include <fields2cover_ros/F2CConfig.h>
 
 #include <dynamic_reconfigure/server.h>
@@ -45,7 +48,17 @@ namespace fields2cover_ros {
 
     //----------------------------------------------------------
     // field file
+    //----------------------------------------------------------
+    // load cache directory
+    private_node_handle_.param<bool>       ("cache_mode",       is_cache_mode_,   false);
+    private_node_handle_.param<std::string>("cache_directory",  cache_directory_, "/tmp");
+    // field file directory
     private_node_handle_.param<std::string>("field_file_path", field_file_path_, "/path/to/json");
+
+    if (is_cache_mode_) {
+      field_file_path_ = cache_directory_;
+    }
+
     std::string field_file = field_file_path_ + "/gps_polygon.json";
     ROS_INFO("[Debug] ROS field file: %s", field_file.c_str());
 
@@ -445,7 +458,27 @@ namespace fields2cover_ros {
     //========================================================
     // save path file
     std::ofstream path_file;
-    std::string path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
+    std::string path_file_name;
+
+    if (!is_cache_mode_) {
+      path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
+    }
+    else { // cache mode
+      path_file_name = field_file_path_ + "/path.txt";
+
+      // Check if file exists
+      struct stat buffer;
+      if (stat(path_file_name.c_str(), &buffer) == 0) {
+        // File already exists; remove it
+        if (std::remove(path_file_name.c_str()) != 0) {
+          ROS_ERROR("Failed to remove existing file: %s", path_file_name.c_str());
+          // Optionally, handle the error (return / exit / etc.)
+        } else {
+          ROS_INFO("Removed existing file: %s", path_file_name.c_str());
+        }
+      }
+    }
+
     path_file.open(path_file_name);
     writePathToFile(fixed_pattern_plan, path_file);
     path_file.close();

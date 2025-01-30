@@ -55,6 +55,10 @@ namespace fields2cover_ros {
       int opt_turn_type_ {0};
       int opt_route_type_ {0};
 
+      // cache file path
+      bool is_cache_mode_;          ///< cache mode flag
+      std::string cache_directory_; ///< cache directory
+
       // filed file path
       std::string field_file_path_;
       int path_file_seq_ = 0;
