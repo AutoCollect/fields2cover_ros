@@ -3,7 +3,7 @@
   <arg name="rviz"              default="false"/>
   <arg name="cache_mode"        default="false"/>
   <arg name="cache_directory"   default="/home/patrick/mapping_2.0_ws/data/cache"/>
-  <arg name="field_file_path"   default="/home/patrick/mapping_2.0_ws/data/darryl/upath/darryl_farm-2025-01-30_21.04.29"/>
+  <arg name="field_file_path"   default="/home/patrick/mapping_2.0_ws/data/darryl/upath/darryl_farm-2025-01-31_11.26.55"/>
 
   <!-- upath generator -->
   <node pkg="fields2cover_ros" type="visualizer_node" name="visualizer" output="screen">
