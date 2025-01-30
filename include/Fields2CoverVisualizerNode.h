@@ -29,7 +29,7 @@ namespace fields2cover_ros {
       void init_VisualizerNode();
       void publish_topics(void);
       void rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level);
-
+      void saveMap();
     private:
       ros::NodeHandle private_node_handle_ { "~" };
       ros::NodeHandle public_node_handle_;

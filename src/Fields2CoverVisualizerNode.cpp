@@ -103,6 +103,86 @@ namespace fields2cover_ros {
     occupancy_grid_.data.resize(width * height, -1);
   }
 
+  // Helper function to write the occupancy grid into PGM + YAML.
+  void VisualizerNode::saveMap() {
+    // 1. Create filenames for .pgm and .yaml
+    const std::string mapdatafile = field_file_path_ + "/map.pgm";
+    const std::string yamlFile    = field_file_path_ + "/map.yaml";
+
+    // 2. Open the PGM file
+    std::ofstream out(mapdatafile.c_str(), std::ios::out | std::ios::binary);
+    if (!out)
+    {
+      throw std::runtime_error("Could not save map file to " + mapdatafile);
+    }
+
+    // 3. Write the PGM header
+    //    "P5" => binary PGM, width, height, and max grayscale value (255).
+    unsigned int width  = occupancy_grid_.info.width;
+    unsigned int height = occupancy_grid_.info.height;
+    out << "P5\n" << width << " " << height << "\n255\n";
+
+    // 4. Write data to the PGM file
+    //    - Typically:
+    //      0   => Occupied (100 in map.data)
+    //      254 => Free (0 in map.data)
+    //      205 => Unknown (-1 in map.data)
+    //
+    //    The grid is stored row-major starting at (0,0) at the lower-left corner of the map.
+    //    But in the PGM we typically save top row first => we must invert row order.
+    
+    for (int y = height - 1; y >= 0; --y)
+    {
+      for (unsigned int x = 0; x < width; ++x)
+      {
+        int i = x + y * width;
+        int8_t val = occupancy_grid_.data[i];
+
+        unsigned char pixel = 205; // default for unknown
+        if (val == 0)
+        {
+          pixel = 254; // free
+        }
+        else if (val == 100)
+        {
+          pixel = 0;   // occupied
+        }
+        // else -1 or other => unknown => 205
+
+        out.write(reinterpret_cast<char*>(&pixel), sizeof(unsigned char));
+      }
+    }
+
+    out.close();
+
+    // 5. Generate a .yaml file describing the map
+    //    - resolution: float
+    //    - origin: [x, y, theta]
+    //    - negate, occupied_thresh, free_thresh
+    //    - image: name of the .pgm
+
+    std::ofstream yaml(yamlFile.c_str());
+    if (!yaml)
+    {
+      throw std::runtime_error("Could not save map YAML to " + yamlFile);
+    }
+
+    yaml << "image: " << "map.pgm" << "\n";
+    yaml << "resolution: " << occupancy_grid_.info.resolution << "\n";
+    // origin is in the format [x, y, theta].
+    yaml << "origin: [" 
+        << occupancy_grid_.info.origin.position.x << ", "
+        << occupancy_grid_.info.origin.position.y << ", "
+        << tf::getYaw(occupancy_grid_.info.origin.orientation) << "]\n";
+    yaml << "negate: 0\n";
+    yaml << "occupied_thresh: 0.65\n";
+    yaml << "free_thresh: 0.196\n";
+
+    yaml.close();
+
+    ROS_INFO_STREAM("Map saved:\n\t" << mapdatafile << "\n\t" << yamlFile);
+  }
+
   void VisualizerNode::publish_topics(void) {
 
     //----------------------------------------------------------
