@@ -581,7 +581,8 @@ namespace fields2cover_ros {
     for (auto& wpt : plan) {
       path_file << wpt.pose.position.x    << " "
                 << wpt.pose.position.y    << " "
-                << wpt.pose.position.z    << " "
+                << 0                      << " "
+                // << wpt.pose.position.z << " "
                 << wpt.pose.orientation.x << " "
                 << wpt.pose.orientation.y << " "
                 << wpt.pose.orientation.z << " "
@@ -682,7 +683,8 @@ namespace fields2cover_ros {
 
       pt.x = p_out.x();
       pt.y = p_out.y();
-      pt.z = p_out.z();
+      // pt.z = p_out.z();
+      pt.z = 0.0;
     }
   }
 
@@ -717,8 +719,8 @@ namespace fields2cover_ros {
 
       ros_p.x = p_out.x();
       ros_p.y = p_out.y();
-      ros_p.z = p_out.z();
-
+      // ros_p.z = p_out.z();
+      ros_p.z = 0.0;
       marker.points.push_back(ros_p);
     }
   }
