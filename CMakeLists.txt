@@ -26,12 +26,17 @@ if ( ament_cmake_FOUND )
     find_package(sensor_msgs REQUIRED)
     find_package(nav_msgs REQUIRED)
 
+    find_package(geographic_msgs REQUIRED)
+    find_package(geodesy REQUIRED)
+
     set(dependencies
         rclcpp
         std_msgs
         geometry_msgs
         sensor_msgs
         nav_msgs
+        geographic_msgs
+        geodesy
     )
 
     include_directories(
@@ -74,6 +79,8 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
         geometry_msgs
         sensor_msgs
         dynamic_reconfigure
+        geographic_msgs
+        geodesy    
     )
 
     # Avoid compile the controls with colcon, as it is not supported
@@ -90,6 +97,8 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
         std_msgs
         geometry_msgs
         sensor_msgs
+        geographic_msgs
+        geodesy    
     )
 
 
@@ -125,13 +134,7 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
       target_link_libraries(visualizer_node
          ${catkin_LIBRARIES} Fields2Cover ${PROJECT_NAME}
       )
-
       add_dependencies(visualizer_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg )
-
-      add_executable(global_odom_recorder src/global_odom_recorder.cpp)
-
-      target_link_libraries(global_odom_recorder ${catkin_LIBRARIES})
-
     endif()
 
     if(CATKIN_ENABLE_TESTING OR BUILD_TESTING)

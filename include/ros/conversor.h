@@ -39,15 +39,16 @@ class ROS {
  public:
   static void to(const F2CPoint& _point, GeometryMsgs::Point32& _p32);
   static void to(const F2CPoint& _point, GeometryMsgs::Point& _p64);
+  static void to(const F2CPoint& _point, const double& angle, GeometryMsgs::PoseStamped& _p64);
+
+  static double normalize(const double& angle);
 
   template <class T>
   static void to(const T& _curve, GeometryMsgs::Polygon& _poly);
 
-  static void to(const F2CCell& _poly,
-    std::vector<GeometryMsgs::Polygon>& _ros_poly);
+  static void to(const F2CCell& _poly, std::vector<GeometryMsgs::Polygon>& _ros_poly);
 
-  static void to(const F2CCells& _polys,
-    std::vector<std::vector<GeometryMsgs::Polygon>>& _ros_polys);
+  static void to(const F2CCells& _polys, std::vector<std::vector<GeometryMsgs::Polygon>>& _ros_polys);
 
   static void to(const F2CLineString& _line, NavMsgs::Path& _path);
 
