@@ -91,9 +91,9 @@ namespace fields2cover_ros {
       gps2map_transform_ = transformGPStoMap(gps_point);
     }
     //----------------------------------------------------------
-    robot_.cruise_speed = 2.0;
-    robot_.setMinRadius(2.0);
-    double headland_width = 3.0*robot_.op_width;
+    robot_.setCruiseVel(2.0);
+    robot_.setMaxCurv(0.5); // 1 / radius: 1/2 = 0.5
+    double headland_width = 3.0 * robot_.getCovWidth();
   }
 
   void VisualizerNode::initializeGrid(double origin_x, double origin_y, int width, int height, double resolution) {
@@ -200,7 +200,7 @@ namespace fields2cover_ros {
 
     //----------------------------------------------------------
     // border GPS contour publish
-    auto f = fields_[0].field.clone();
+    auto f = fields_[0].getField().clone();
     geometry_msgs::PolygonStamped polygon_st;
     polygon_st.header.stamp = ros::Time::now();
     polygon_st.header.frame_id = frame_id_;
@@ -290,7 +290,7 @@ namespace fields2cover_ros {
     // no_headlands publisher
 
     f2c::hg::ConstHL hl_gen_;
-    F2CCell no_headlands = hl_gen_.generateHeadlands(f, optim_.headland_width).getGeometry(0);
+    F2CCell no_headlands = hl_gen_.generateHeadlands(f, m_headland_width_).getGeometry(0);
 
     geometry_msgs::PolygonStamped polygon_st2;
     polygon_st2.header.stamp = ros::Time::now();
@@ -312,23 +312,23 @@ namespace fields2cover_ros {
       switch (sg_objective_) {
         case 0 : {
           f2c::obj::SwathLength obj;
-          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
+          swaths = swath_gen_.generateBestSwaths(obj, robot_.getCovWidth(), no_headlands);
           break;
         }
         case 1 : {
           f2c::obj::NSwath obj;
-          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
+          swaths = swath_gen_.generateBestSwaths(obj, robot_.getCovWidth(), no_headlands);
           break;
         }
         case 2 : {
           f2c::obj::FieldCoverage obj;
-          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
+          swaths = swath_gen_.generateBestSwaths(obj, robot_.getCovWidth(), no_headlands);
           break;
         }
       }
     }
     else {
-      swaths = swath_gen_.generateSwaths(optim_.best_angle, robot_.op_width, no_headlands);
+      swaths = swath_gen_.generateSwaths(m_swath_angle_, robot_.getCovWidth(), no_headlands);
     }
 
     F2CSwaths route;
@@ -361,22 +361,22 @@ namespace fields2cover_ros {
     switch(opt_turn_type_) {
       case 0 : {
         f2c::pp::DubinsCurves turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
+        path = path_planner.planPath(robot_, route, turn);
         break;
       }
       case 1 : {
         f2c::pp::DubinsCurvesCC turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
+        path = path_planner.planPath(robot_, route, turn);
         break;
       }
       case 2 : {
         f2c::pp::ReedsSheppCurves turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
+        path = path_planner.planPath(robot_, route, turn);
         break;
       }
       case 3 : {
         f2c::pp::ReedsSheppCurvesHC turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
+        path = path_planner.planPath(robot_, route, turn);
         break;
       }
     }
@@ -405,13 +405,13 @@ namespace fields2cover_ros {
     // interpolation with waypoints
 
     geometry_msgs::PoseStamped pre_wpt;
-    pre_wpt.pose.position.x = path.states[0].point.getX();
-    pre_wpt.pose.position.y = path.states[0].point.getY();
-
+    path.getStates()[0].point.getX();
+    pre_wpt.pose.position.x = path.getStates()[0].point.getX();
+    pre_wpt.pose.position.y = path.getStates()[0].point.getY();
     double wpt_gap_thresh_hold = 1.0;
     std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
 
-    for (auto&& s : path.states) {
+    for (auto&& s : path.getStates()) {
       geometry_msgs::PoseStamped cur_wpt;
       cur_wpt.header.frame_id = frame_id_;
       cur_wpt.header.stamp = marker_swaths.header.stamp;
@@ -487,10 +487,12 @@ namespace fields2cover_ros {
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
-    robot_.op_width = config.op_width;
-    robot_.setMinRadius(config.turn_radius);
-    optim_.best_angle = config.swath_angle;
-    optim_.headland_width = config.headland_width;
+    robot_.setCovWidth(config.op_width);
+    if (config.turn_radius != 0.0) {
+      robot_.setMaxCurv(1.0 / config.turn_radius);
+    }
+    m_swath_angle_    = config.swath_angle;
+    m_headland_width_ = config.headland_width;
     automatic_angle_ = config.automatic_angle;
     sg_objective_ = config.sg_objective;
     opt_turn_type_ = config.turn_type;
@@ -708,7 +710,7 @@ namespace fields2cover_ros {
     transform.setRotation(q);
 
     // Transform each point in the polygon
-    for (auto&& s : path.states) {
+    for (auto&& s : path.getStates()) {
       geometry_msgs::Point ros_p;
       conversor::ROS::to(s.point, ros_p);
 
