@@ -457,6 +457,12 @@ namespace fields2cover_ros {
     publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
     //========================================================
     // save path file
+    savePath(fixed_pattern_plan);
+    //========================================================
+  }
+
+  void VisualizerNode::savePath(const std::vector<geometry_msgs::PoseStamped>& path) {
+
     std::ofstream path_file;
     std::string path_file_name;
 
@@ -480,10 +486,9 @@ namespace fields2cover_ros {
     }
 
     path_file.open(path_file_name);
-    writePathToFile(fixed_pattern_plan, path_file);
+    writePathToFile(path, path_file);
     path_file.close();
     ROS_INFO("%s generated", path_file_name.c_str());
-    //========================================================
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
@@ -517,7 +522,6 @@ namespace fields2cover_ros {
 
     pub.publish(gui_path);
   }
-
 
   void VisualizerNode::publishFixedPatternWayPoints(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub) {
 

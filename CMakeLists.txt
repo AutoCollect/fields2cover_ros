@@ -36,6 +36,15 @@ endif()
 
 find_package(Fields2Cover REQUIRED)
 
+# Find the Clipper2 library in the devel lib directory.
+find_library(CLIPPER2_LIBRARY
+  NAMES Clipper2
+  PATHS ${CLIPPER2_LIB_DIR}
+)
+if(NOT CLIPPER2_LIBRARY)
+  message(FATAL_ERROR "Could not find Clipper2 library in ${CLIPPER2_LIB_DIR}")
+endif()
+
 find_package(ament_cmake QUIET)
 find_package(catkin QUIET)
 
@@ -153,10 +162,11 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
       add_executable(visualizer_node
           src/fields2cover_visualizer_node.cpp
           src/Fields2CoverVisualizerNode.cpp
+          src/toolpath_generator.cpp
       )
 
       target_link_libraries(visualizer_node
-        PRIVATE Fields2Cover::Fields2Cover ${catkin_LIBRARIES} ${PROJECT_NAME} -lgdal
+        PRIVATE Fields2Cover::Fields2Cover ${catkin_LIBRARIES} ${PROJECT_NAME} -lgdal ${CLIPPER2_LIBRARY}
       )
       add_dependencies(visualizer_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg )
     endif()

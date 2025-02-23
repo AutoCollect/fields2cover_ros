@@ -52,6 +52,12 @@ namespace fields2cover_ros {
        */
       void saveMap();
 
+      /**
+       * @brief Save the current path.
+       * @param path Path to write with default filename
+       */
+       void savePath(const std::vector<geometry_msgs::PoseStamped>& path);
+
     private:
       ros::NodeHandle private_node_handle_ { "~" }; ///< Private node handle for ROS.
       ros::NodeHandle public_node_handle_; ///< Public node handle for ROS.
