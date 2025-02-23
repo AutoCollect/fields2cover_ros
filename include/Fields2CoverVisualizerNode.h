@@ -22,6 +22,8 @@
 #include <fields2cover_ros/F2CConfig.h>
 #include <fields2cover.h>
 
+#include "toolpath_generator.hpp"
+
 namespace fields2cover_ros {
 
   /**
@@ -59,53 +61,68 @@ namespace fields2cover_ros {
        void savePath(const std::vector<geometry_msgs::PoseStamped>& path);
 
     private:
-      ros::NodeHandle private_node_handle_ { "~" }; ///< Private node handle for ROS.
-      ros::NodeHandle public_node_handle_; ///< Public node handle for ROS.
 
-      ros::Publisher field_polygon_publisher_; ///< Publisher for field polygons.
-      ros::Publisher field_no_headlands_publisher_; ///< Publisher for fields without headlands.
-      ros::Publisher field_swaths_publisher_; ///< Publisher for field swaths.
-      ros::Publisher map_pub_; ///< Publisher for the map.
+      ros::NodeHandle private_node_handle_ { "~" };      ///< Private node handle for ROS.
+      ros::NodeHandle public_node_handle_;               ///< Public node handle for ROS.
 
-      ros::Publisher field_2d_border_publisher_; ///< Publisher for 2D field borders.
-      nav_msgs::OccupancyGrid occupancy_grid_; ///< Occupancy grid for the map.
+      //===================================================
+      // ROS Path Publishers
+      //===================================================
+      ros::Publisher field_polygon_publisher_;           ///< Publisher for 2D/3D field border from GPS.
+      ros::Publisher field_2d_border_publisher_;         ///< Publisher for 2D field border from GPS with 0 elevation
+      ros::Publisher field_no_headlands_publisher_;      ///< Publisher for fields inner headlands.
+      ros::Publisher field_swaths_publisher_;            ///< Publisher for field swaths (U turn part).
+      // fixed pattern upath trajectory result
+      ros::Publisher fixed_pattern_plan_pose_array_pub_; ///< Publisher for fixed pattern plan poses.
+      // 2d occupancy grid map
+      ros::Publisher map_pub_;                           ///< Publisher for the map.
 
-      sensor_msgs::NavSatFix gps_; ///< GPS data.
+      nav_msgs::OccupancyGrid occupancy_grid_;  ///< Occupancy grid for the map.
+      sensor_msgs::NavSatFix gps_;              ///< GPS data.
+      f2c::Transform transf_;                   ///< Transformation utility.
 
-      f2c::Transform transf_; ///< Transformation utility.
+      //===================================================
+      // Field2Cover param
+      //===================================================
 
-      F2CFields fields_; ///< Fields data.
-      F2CRobot robot_{2.1, 2.5}; ///< Robot configuration.
-      double m_swath_angle_; ///< config.swath_angle
-      double m_headland_width_; ///< config.headland_width
+      F2CFields fields_;             ///< Fields data.
+      F2CRobot robot_{2.1, 2.5};     ///< Robot configuration.
+      double m_swath_angle_;         ///< config.swath_angle
+      double m_headland_width_;      ///< config.headland_width
 
       bool automatic_angle_ {false}; ///< Flag for automatic angle calculation.
-      int sg_objective_ {0}; ///< Objective for the SG algorithm.
-      int opt_turn_type_ {0}; ///< Type of turn optimization.
-      int opt_route_type_ {0}; ///< Type of route optimization.
+      int  sg_objective_   {0};      ///< Objective for the SG algorithm.
+      int  opt_turn_type_  {0};      ///< Type of turn optimization.
+      int  opt_route_type_ {0};      ///< Type of route optimization.
 
+      //===================================================
+      // Save to File
+      //===================================================
       // cache file path
-      bool is_cache_mode_; ///< Flag for cache mode.
-      std::string cache_directory_; ///< Directory for cache files.
+      bool is_cache_mode_;           ///< Flag for cache mode.
+      std::string cache_directory_;  ///< Directory for cache files.
 
       // filed file path
-      std::string field_file_path_; ///< Path to the field file.
-      int path_file_seq_ = 0; ///< Sequence number for path files.
+      std::string field_file_path_;  ///< Path to the field file.
+      int path_file_seq_ = 0;        ///< Sequence number for path files.
 
       // path reverse flag
-      bool reverse_path_ {false}; ///< Flag to reverse the path.
+      bool reverse_path_ {false};    ///< Flag to reverse the path.
 
       // U path waypoints interpolation gap
-      double interp_step_ = 0.01; ///< Interpolation step for U path waypoints.
+      double interp_step_ = 0.01;    ///< Interpolation step for U path waypoints.
 
       // trajectory publish frame id
-      std::string frame_id_; ///< Frame ID for trajectory publishing.
+      std::string frame_id_;         ///< Frame ID for trajectory publishing.
 
       // first gps transfrom from utm frame to map frame
-      geometry_msgs::PoseStamped gps2map_transform_; ///< Transform from GPS to map frame.
+      geometry_msgs::PoseStamped gps2map_transform_;     ///< Transform from GPS to map frame.
 
-      // fixed pattern global plan points
-      ros::Publisher fixed_pattern_plan_pose_array_pub_; ///< Publisher for fixed pattern plan poses.
+      //===================================================
+      // Spiral Path Generator
+      //===================================================
+      /// spiral path
+      ToolpathGenerator* tp_gen_;                        ///< spiral path generator
 
       /**
        * @brief Transform GPS coordinates to map frame coordinates.
