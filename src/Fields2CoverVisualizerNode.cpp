@@ -96,105 +96,6 @@ namespace fields2cover_ros {
     double headland_width = 3.0 * robot_.getCovWidth();
   }
 
-  void VisualizerNode::initializeGrid(double origin_x, double origin_y, int width, int height, double resolution) {
-
-    occupancy_grid_.header.frame_id = frame_id_;
-    // Set the grid resolution (meters per cell)
-    occupancy_grid_.info.resolution = resolution;
-
-    // Set the size of the occupancy grid
-    occupancy_grid_.info.width = width;
-    occupancy_grid_.info.height = height;
-
-    // Set the origin of the occupancy grid
-    occupancy_grid_.info.origin.position.x = origin_x;
-    occupancy_grid_.info.origin.position.y = origin_y;
-    occupancy_grid_.info.origin.position.z = 0.0;
-    occupancy_grid_.info.origin.orientation.w = 1.0;  // No rotation
-
-    // Initialize the grid data, all cells are unknown (-1)
-    occupancy_grid_.data.resize(width * height, -1);
-  }
-
-  // Helper function to write the occupancy grid into PGM + YAML.
-  void VisualizerNode::saveMap() {
-    // 1. Create filenames for .pgm and .yaml
-    const std::string mapdatafile = field_file_path_ + "/map.pgm";
-    const std::string yamlFile    = field_file_path_ + "/map.yaml";
-
-    // 2. Open the PGM file
-    std::ofstream out(mapdatafile.c_str(), std::ios::out | std::ios::binary);
-    if (!out)
-    {
-      throw std::runtime_error("Could not save map file to " + mapdatafile);
-    }
-
-    // 3. Write the PGM header
-    //    "P5" => binary PGM, width, height, and max grayscale value (255).
-    unsigned int width  = occupancy_grid_.info.width;
-    unsigned int height = occupancy_grid_.info.height;
-    out << "P5\n" << width << " " << height << "\n255\n";
-
-    // 4. Write data to the PGM file
-    //    - Typically:
-    //      0   => Occupied (100 in map.data)
-    //      254 => Free (0 in map.data)
-    //      205 => Unknown (-1 in map.data)
-    //
-    //    The grid is stored row-major starting at (0,0) at the lower-left corner of the map.
-    //    But in the PGM we typically save top row first => we must invert row order.
-    
-    for (int y = height - 1; y >= 0; --y)
-    {
-      for (unsigned int x = 0; x < width; ++x)
-      {
-        int i = x + y * width;
-        int8_t val = occupancy_grid_.data[i];
-
-        unsigned char pixel = 205; // default for unknown
-        if (val == 0)
-        {
-          pixel = 254; // free
-        }
-        else if (val == 100)
-        {
-          pixel = 0;   // occupied
-        }
-        // else -1 or other => unknown => 205
-
-        out.write(reinterpret_cast<char*>(&pixel), sizeof(unsigned char));
-      }
-    }
-
-    out.close();
-
-    // 5. Generate a .yaml file describing the map
-    //    - resolution: float
-    //    - origin: [x, y, theta]
-    //    - negate, occupied_thresh, free_thresh
-    //    - image: name of the .pgm
-
-    std::ofstream yaml(yamlFile.c_str());
-    if (!yaml)
-    {
-      throw std::runtime_error("Could not save map YAML to " + yamlFile);
-    }
-
-    yaml << "image: " << "map.pgm" << "\n";
-    yaml << "resolution: " << occupancy_grid_.info.resolution << "\n";
-    // origin is in the format [x, y, theta].
-    yaml << "origin: [" 
-        << occupancy_grid_.info.origin.position.x << ", "
-        << occupancy_grid_.info.origin.position.y << ", "
-        << tf::getYaw(occupancy_grid_.info.origin.orientation) << "]\n";
-    yaml << "negate: 0\n";
-    yaml << "occupied_thresh: 0.65\n";
-    yaml << "free_thresh: 0.196\n";
-
-    yaml.close();
-
-    ROS_INFO_STREAM("Map saved:\n\t" << mapdatafile << "\n\t" << yamlFile);
-  }
 
   void VisualizerNode::publish_topics(void) {
 
@@ -242,51 +143,12 @@ namespace fields2cover_ros {
 
     field_2d_border_publisher_.publish(line_strip);
     //----------------------------------------------------------
-    // occupancy grid 2D map creation
-
-    // Calculate the bounding box of the polygon
-    double min_x = std::numeric_limits<double>::max();
-    double max_x = std::numeric_limits<double>::lowest();
-    double min_y = std::numeric_limits<double>::max();
-    double max_y = std::numeric_limits<double>::lowest();
-
-    for (const auto& point : polygon_st.polygon.points) {
-      if (point.x < min_x) min_x = point.x;
-      if (point.x > max_x) max_x = point.x;
-      if (point.y < min_y) min_y = point.y;
-      if (point.y > max_y) max_y = point.y;
-    }
-
-    // Calculate the width, height, and origin of the occupancy grid
-    double width_m    = max_x - min_x;
-    double height_m   = max_y - min_y;
-    double resolution = 0.05; // 0.05 meter per cell, can be adjusted as needed
-
-    int grid_width  = static_cast<int>(width_m / resolution)  + 1;
-    int grid_height = static_cast<int>(height_m / resolution) + 1;
-
-    // Initialize the occupancy grid
-    initializeGrid(min_x, min_y, grid_width, grid_height, resolution);
-
-    // Mark the polygon points in the occupancy grid
-    for (const auto& point : polygon_st.polygon.points) {
-      int grid_x = static_cast<int>((point.x - min_x) / resolution);
-      int grid_y = static_cast<int>((point.y - min_y) / resolution);
-
-      // Ensure the coordinates are within bounds
-      if (grid_x >= 0 && grid_x < occupancy_grid_.info.width &&
-        grid_y >= 0 && grid_y < occupancy_grid_.info.height) {
-        
-        int index = grid_y * occupancy_grid_.info.width + grid_x;
-        occupancy_grid_.data[index] = 100;  // Mark the cell as occupied
-      }
-    }
-
-    // Publish the updated occupancy grid
-    map_pub_.publish(occupancy_grid_);
+    // occupancy grid 2D map creation & publish
+    generateGrid(polygon_st);
     //----------------------------------------------------------
+    // clear the cache
     polygon_st.polygon.points.clear();
-    //----------------------------------------------------------
+    //========================================================
     // no_headlands publisher
 
     f2c::hg::ConstHL hl_gen_;
@@ -456,39 +318,9 @@ namespace fields2cover_ros {
     // publish topics
     publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
     //========================================================
-    // save path file
+    // save path file each modification step
     savePath(fixed_pattern_plan);
     //========================================================
-  }
-
-  void VisualizerNode::savePath(const std::vector<geometry_msgs::PoseStamped>& path) {
-
-    std::ofstream path_file;
-    std::string path_file_name;
-
-    if (!is_cache_mode_) {
-      path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
-    }
-    else { // cache mode
-      path_file_name = field_file_path_ + "/path.txt";
-
-      // Check if file exists
-      struct stat buffer;
-      if (stat(path_file_name.c_str(), &buffer) == 0) {
-        // File already exists; remove it
-        if (std::remove(path_file_name.c_str()) != 0) {
-          ROS_ERROR("Failed to remove existing file: %s", path_file_name.c_str());
-          // Optionally, handle the error (return / exit / etc.)
-        } else {
-          ROS_INFO("Removed existing file: %s", path_file_name.c_str());
-        }
-      }
-    }
-
-    path_file.open(path_file_name);
-    writePathToFile(path, path_file);
-    path_file.close();
-    ROS_INFO("%s generated", path_file_name.c_str());
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
@@ -594,6 +426,181 @@ namespace fields2cover_ros {
                 << wpt.pose.orientation.z << " "
                 << wpt.pose.orientation.w << std::endl;
     }
+  }
+
+  void VisualizerNode::savePath(const std::vector<geometry_msgs::PoseStamped>& path) {
+
+    std::ofstream path_file;
+    std::string path_file_name;
+
+    if (!is_cache_mode_) {
+      path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
+    }
+    else { // cache mode
+      path_file_name = field_file_path_ + "/path.txt";
+
+      // Check if file exists
+      struct stat buffer;
+      if (stat(path_file_name.c_str(), &buffer) == 0) {
+        // File already exists; remove it
+        if (std::remove(path_file_name.c_str()) != 0) {
+          ROS_ERROR("Failed to remove existing file: %s", path_file_name.c_str());
+          // Optionally, handle the error (return / exit / etc.)
+        } else {
+          ROS_INFO("Removed existing file: %s", path_file_name.c_str());
+        }
+      }
+    }
+
+    path_file.open(path_file_name);
+    writePathToFile(path, path_file);
+    path_file.close();
+    ROS_INFO("%s generated", path_file_name.c_str());
+  }
+
+  void VisualizerNode::initializeGrid(double origin_x, double origin_y, int width, int height, double resolution) {
+
+    occupancy_grid_.header.frame_id = frame_id_;
+    // Set the grid resolution (meters per cell)
+    occupancy_grid_.info.resolution = resolution;
+
+    // Set the size of the occupancy grid
+    occupancy_grid_.info.width = width;
+    occupancy_grid_.info.height = height;
+
+    // Set the origin of the occupancy grid
+    occupancy_grid_.info.origin.position.x = origin_x;
+    occupancy_grid_.info.origin.position.y = origin_y;
+    occupancy_grid_.info.origin.position.z = 0.0;
+    occupancy_grid_.info.origin.orientation.w = 1.0;  // No rotation
+
+    // Initialize the grid data, all cells are unknown (-1)
+    occupancy_grid_.data.resize(width * height, -1);
+  }
+
+  void VisualizerNode::generateGrid(const geometry_msgs::PolygonStamped& border) {
+
+    // Calculate the bounding box of the polygon
+    double min_x = std::numeric_limits<double>::max();
+    double max_x = std::numeric_limits<double>::lowest();
+    double min_y = std::numeric_limits<double>::max();
+    double max_y = std::numeric_limits<double>::lowest();
+
+    for (const auto& point : border.polygon.points) {
+      if (point.x < min_x) min_x = point.x;
+      if (point.x > max_x) max_x = point.x;
+      if (point.y < min_y) min_y = point.y;
+      if (point.y > max_y) max_y = point.y;
+    }
+
+    // Calculate the width, height, and origin of the occupancy grid
+    double width_m    = max_x - min_x;
+    double height_m   = max_y - min_y;
+    double resolution = 0.05; // 0.05 meter per cell, can be adjusted as needed
+
+    int grid_width  = static_cast<int>(width_m / resolution)  + 1;
+    int grid_height = static_cast<int>(height_m / resolution) + 1;
+
+    // Initialize the occupancy grid
+    initializeGrid(min_x, min_y, grid_width, grid_height, resolution);
+
+    // Mark the polygon points in the occupancy grid
+    for (const auto& point : border.polygon.points) {
+      int grid_x = static_cast<int>((point.x - min_x) / resolution);
+      int grid_y = static_cast<int>((point.y - min_y) / resolution);
+
+      // Ensure the coordinates are within bounds
+      if (grid_x >= 0 && grid_x < occupancy_grid_.info.width &&
+        grid_y >= 0 && grid_y < occupancy_grid_.info.height) {
+        
+        int index = grid_y * occupancy_grid_.info.width + grid_x;
+        occupancy_grid_.data[index] = 100;  // Mark the cell as occupied
+      }
+    }
+
+    // Publish the updated occupancy grid
+    map_pub_.publish(occupancy_grid_);
+  }
+
+
+  // Helper function to write the occupancy grid into PGM + YAML.
+  void VisualizerNode::saveMap() {
+    // 1. Create filenames for .pgm and .yaml
+    const std::string mapdatafile = field_file_path_ + "/map.pgm";
+    const std::string yamlFile    = field_file_path_ + "/map.yaml";
+
+    // 2. Open the PGM file
+    std::ofstream out(mapdatafile.c_str(), std::ios::out | std::ios::binary);
+    if (!out)
+    {
+      throw std::runtime_error("Could not save map file to " + mapdatafile);
+    }
+
+    // 3. Write the PGM header
+    //    "P5" => binary PGM, width, height, and max grayscale value (255).
+    unsigned int width  = occupancy_grid_.info.width;
+    unsigned int height = occupancy_grid_.info.height;
+    out << "P5\n" << width << " " << height << "\n255\n";
+
+    // 4. Write data to the PGM file
+    //    - Typically:
+    //      0   => Occupied (100 in map.data)
+    //      254 => Free (0 in map.data)
+    //      205 => Unknown (-1 in map.data)
+    //
+    //    The grid is stored row-major starting at (0,0) at the lower-left corner of the map.
+    //    But in the PGM we typically save top row first => we must invert row order.
+    
+    for (int y = height - 1; y >= 0; --y)
+    {
+      for (unsigned int x = 0; x < width; ++x)
+      {
+        int i = x + y * width;
+        int8_t val = occupancy_grid_.data[i];
+
+        unsigned char pixel = 205; // default for unknown
+        if (val == 0)
+        {
+          pixel = 254; // free
+        }
+        else if (val == 100)
+        {
+          pixel = 0;   // occupied
+        }
+        // else -1 or other => unknown => 205
+
+        out.write(reinterpret_cast<char*>(&pixel), sizeof(unsigned char));
+      }
+    }
+
+    out.close();
+
+    // 5. Generate a .yaml file describing the map
+    //    - resolution: float
+    //    - origin: [x, y, theta]
+    //    - negate, occupied_thresh, free_thresh
+    //    - image: name of the .pgm
+
+    std::ofstream yaml(yamlFile.c_str());
+    if (!yaml)
+    {
+      throw std::runtime_error("Could not save map YAML to " + yamlFile);
+    }
+
+    yaml << "image: " << "map.pgm" << "\n";
+    yaml << "resolution: " << occupancy_grid_.info.resolution << "\n";
+    // origin is in the format [x, y, theta].
+    yaml << "origin: [" 
+        << occupancy_grid_.info.origin.position.x << ", "
+        << occupancy_grid_.info.origin.position.y << ", "
+        << tf::getYaw(occupancy_grid_.info.origin.orientation) << "]\n";
+    yaml << "negate: 0\n";
+    yaml << "occupied_thresh: 0.65\n";
+    yaml << "free_thresh: 0.196\n";
+
+    yaml.close();
+
+    ROS_INFO_STREAM("Map saved:\n\t" << mapdatafile << "\n\t" << yamlFile);
   }
 
   void VisualizerNode::reverseOrientation(geometry_msgs::PoseStamped& pose) {
