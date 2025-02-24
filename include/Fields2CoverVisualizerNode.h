@@ -124,6 +124,9 @@ namespace fields2cover_ros {
       /// spiral path
       ToolpathGenerator* tp_gen_;                        ///< spiral path generator
 
+
+      void generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour);
+
       /**
        * @brief Transform GPS coordinates to map frame coordinates.
        * @param gps_point GPS point to transform.
@@ -152,6 +155,12 @@ namespace fields2cover_ros {
        * @param poseVec Vector of poses to transform.
        */
       void transformPoses (const geometry_msgs::PoseStamped& poseTransform, std::vector<geometry_msgs::PoseStamped>& poseVec);
+
+      /**
+       * @brief publish gps 2d border.
+       * @param border border polygon.
+       */
+      void publish_2d_gps_border(const geometry_msgs::PolygonStamped& border);
 
       /**
        * @brief Publish a fixed pattern plan.

@@ -290,7 +290,7 @@ void ToolpathGenerator::plotPath() const {
   contour_marker.type = visualization_msgs::Marker::LINE_STRIP;
   contour_marker.action = visualization_msgs::Marker::ADD;
   contour_marker.pose.orientation.w = 1.0;
-  contour_marker.scale.x = 0.01;  // Line width
+  contour_marker.scale.x = 0.5;  // Line width
   // Set cyan color: (R=0, G=1, B=1, A=1)
   contour_marker.color.r = 0.0;
   contour_marker.color.g = 1.0;
@@ -315,7 +315,7 @@ void ToolpathGenerator::plotPath() const {
   spiral_marker.type = visualization_msgs::Marker::LINE_STRIP;
   spiral_marker.action = visualization_msgs::Marker::ADD;
   spiral_marker.pose.orientation.w = 1.0;
-  spiral_marker.scale.x = 0.01;  // Line width
+  spiral_marker.scale.x = 0.25;  // Line width
   // Set green color: (R=0, G=1, B=0, A=1)
   spiral_marker.color.r = 0.0;
   spiral_marker.color.g = 1.0;
@@ -341,9 +341,9 @@ void ToolpathGenerator::plotPath() const {
   first_point_marker.action = visualization_msgs::Marker::ADD;
   first_point_marker.pose.orientation.w = 1.0;
   // Set a larger scale for the sphere (big point)
-  first_point_marker.scale.x = 0.1;
-  first_point_marker.scale.y = 0.1;
-  first_point_marker.scale.z = 0.1;
+  first_point_marker.scale.x = 1.0;
+  first_point_marker.scale.y = 1.0;
+  first_point_marker.scale.z = 1.0;
   // Set blue color: (R=0, G=0, B=1, A=1)
   first_point_marker.color.r = 0.0;
   first_point_marker.color.g = 0.0;
@@ -365,9 +365,9 @@ void ToolpathGenerator::plotPath() const {
   last_point_marker.action = visualization_msgs::Marker::ADD;
   last_point_marker.pose.orientation.w = 1.0;
   // Set a larger scale for the sphere (big point)
-  last_point_marker.scale.x = 0.1;
-  last_point_marker.scale.y = 0.1;
-  last_point_marker.scale.z = 0.1;
+  last_point_marker.scale.x = 1.0;
+  last_point_marker.scale.y = 1.0;
+  last_point_marker.scale.z = 1.0;
   // Set red color: (R=1, G=0, B=0, A=1)
   last_point_marker.color.r = 1.0;
   last_point_marker.color.g = 0.0;

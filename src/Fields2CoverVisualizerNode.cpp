@@ -31,6 +31,10 @@
 using json = nlohmann::json;
 using namespace std;
 
+// Bring the nested types into our local scope for convenience.
+using ToolPolyline = ToolpathGenerator::ToolPolyline;
+using ToolPoint = ToolpathGenerator::ToolPoint;
+
 namespace fields2cover_ros {
     
   void VisualizerNode::init_VisualizerNode() {
@@ -99,7 +103,7 @@ namespace fields2cover_ros {
 
   void VisualizerNode::publish_topics(void) {
 
-    //----------------------------------------------------------
+    //========================================================
     // border GPS contour publish
     auto f = fields_[0].getField().clone();
     geometry_msgs::PolygonStamped polygon_st;
@@ -112,48 +116,18 @@ namespace fields2cover_ros {
 
     field_polygon_publisher_.publish(polygon_st);
     //----------------------------------------------------------
-    // calculate 2d GPS and create a marker
-    visualization_msgs::Marker line_strip;
-    line_strip.header.frame_id = frame_id_; // Change to your frame
-    line_strip.header.stamp = ros::Time::now();
-    line_strip.ns = "2d_border_marker";
-    line_strip.action = visualization_msgs::Marker::ADD;
-    line_strip.pose.orientation.w = 1.0;
-
-    line_strip.id = 0;
-    line_strip.type = visualization_msgs::Marker::LINE_STRIP;
-
-    // Set the line color (RGB + alpha)
-    line_strip.color.r = 0.0;
-    line_strip.color.g = 1.0;
-    line_strip.color.b = 1.0;
-    line_strip.color.a = 1.0;
-
-    // Set the line width
-    line_strip.scale.x = 0.2; // Line width
-
-    // Add points to the marker
-    for (const auto& point : polygon_st.polygon.points) {
-      geometry_msgs::Point p;
-      p.x = point.x;
-      p.y = point.y;
-      p.z = 0.0;
-      line_strip.points.push_back(p);
-    }
-
-    field_2d_border_publisher_.publish(line_strip);
+    // calculate 2d GPS border and publish
+    publish_2d_gps_border(polygon_st);
     //----------------------------------------------------------
     // occupancy grid 2D map creation & publish
-    generateGrid(polygon_st);
+    // generateGrid(polygon_st);
     //----------------------------------------------------------
     // clear the cache
     polygon_st.polygon.points.clear();
     //========================================================
     // no_headlands publisher
-
     f2c::hg::ConstHL hl_gen_;
     F2CCell no_headlands = hl_gen_.generateHeadlands(f, m_headland_width_).getGeometry(0);
-
     geometry_msgs::PolygonStamped polygon_st2;
     polygon_st2.header.stamp = ros::Time::now();
     polygon_st2.header.frame_id = frame_id_;
@@ -163,11 +137,14 @@ namespace fields2cover_ros {
     transformPoints(gps2map_transform_, polygon_st2);
 
     field_no_headlands_publisher_.publish(polygon_st2);
+    //========================================================
+    // single inward spiral trajectory generation & publish
+    generateSingleInwardSpiral(polygon_st2);
     //----------------------------------------------------------
+    // clear no_headlands
     polygon_st2.polygon.points.clear();
-    //----------------------------------------------------------
+    //========================================================
     // swaths path generation
-
     F2CSwaths swaths;
     f2c::sg::BruteForce swath_gen_;
     if (automatic_angle_) {
@@ -318,9 +295,9 @@ namespace fields2cover_ros {
     // publish topics
     publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
     //========================================================
-    // save path file each modification step
-    savePath(fixed_pattern_plan);
-    //========================================================
+    // // save path file each modification step
+    // savePath(fixed_pattern_plan);
+    // //========================================================
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
@@ -328,14 +305,78 @@ namespace fields2cover_ros {
     if (config.turn_radius != 0.0) {
       robot_.setMaxCurv(1.0 / config.turn_radius);
     }
+
     m_swath_angle_    = config.swath_angle;
     m_headland_width_ = config.headland_width;
-    automatic_angle_ = config.automatic_angle;
-    sg_objective_ = config.sg_objective;
-    opt_turn_type_ = config.turn_type;
-    opt_route_type_ = config.route_type;
-    reverse_path_ = config.reverse_path;
+    automatic_angle_  = config.automatic_angle;
+    sg_objective_     = config.sg_objective;
+    opt_turn_type_    = config.turn_type;
+    opt_route_type_   = config.route_type;
+    reverse_path_     = config.reverse_path;
+
     publish_topics();
+  }
+
+  void VisualizerNode::publish_2d_gps_border(const geometry_msgs::PolygonStamped& border) {
+
+    // calculate 2d GPS and create a marker
+    visualization_msgs::Marker line_strip;
+    line_strip.header.frame_id = frame_id_; // Change to your frame
+    line_strip.header.stamp = ros::Time::now();
+    line_strip.ns = "2d_border_marker";
+    line_strip.action = visualization_msgs::Marker::ADD;
+    line_strip.pose.orientation.w = 1.0;
+
+    line_strip.id = 0;
+    line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+
+    // Set the line color (RGB + alpha)
+    line_strip.color.r = 0.0;
+    line_strip.color.g = 1.0;
+    line_strip.color.b = 1.0;
+    line_strip.color.a = 1.0;
+
+    // Set the line width
+    line_strip.scale.x = 0.2; // Line width
+
+    // Add points to the marker
+    for (const auto& point : border.polygon.points) {
+      geometry_msgs::Point p;
+      p.x = point.x;
+      p.y = point.y;
+      p.z = 0.0;
+      line_strip.points.push_back(p);
+    }
+
+    field_2d_border_publisher_.publish(line_strip);
+  }
+
+  void VisualizerNode::generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour) {
+    // Define several test polygons (outer contours only)
+    std::pair<std::string, ToolPolyline> polygon;
+    for (const auto& point : contour.polygon.points) {
+      polygon.second.push_back(ToolPoint {point.x, point.y});
+    }
+
+    std::string         polygon_name    = polygon.first;
+    const ToolPolyline &polygon_contour = polygon.second;
+
+    std::cout << "\n==== Processing Polygon: " << polygon_name << " ====\n";
+    // Create a ToolpathGenerator instance.
+    // For demonstration: smooth_number = 0, toolpath_size = 0.5, smooth_boundary = false.
+    double path_size = 6.0;
+    tp_gen_ = new ToolpathGenerator(0, path_size, false);
+
+    tp_gen_->deleteMarkers ();    
+    tp_gen_->setPolygonName(polygon_name);
+    tp_gen_->setContour    (polygon_contour);
+
+    try {
+        tp_gen_->archimedeanSpiral();
+        tp_gen_->plotPath();
+    } catch (const std::exception &e) {
+        std::cerr << "Error in processing polygon " << polygon_name << ": " << e.what() << "\n";
+    }
   }
 
   void VisualizerNode::publishFixedPatternPlan(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub) {
