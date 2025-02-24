@@ -56,6 +56,9 @@ class ToolpathGenerator {
   /// Set the polygon name.
   void setPolygonName(const std::string &name);
 
+  /// Set the max offsets threshold
+  void setMaxOffsets(const int &max_offsets);
+
   /// Generate the toolpath using the Archimedean spiral method.
   void archimedeanSpiral();
 
@@ -128,12 +131,13 @@ class ToolpathGenerator {
   ToolPolyline entry_spiral_;         // final toolpath.
   double entry_d_0_;                  // Current parameter along the polyline.
   std::vector<ToolPolyline> offsets_; // Computed inward offset polylines.
-  std::string poly_name_;             // Polygon name.
+  int max_offsets_;                   // max offsets threshold.
 
   int smooth_number_;
   double toolpath_size_;
   bool smooth_boundary_;
   ToolPolyline contour_;              // The outer contour.
+  std::string poly_name_;             // Polygon name.
 
   ros::NodeHandle nh_;                // ROS node handle.
   mutable ros::Publisher offset_pub_; // ROS publisher for offset polygons visualization.
@@ -178,7 +182,16 @@ class ToolpathGenerator {
   void blendPoints(ToolPolyline &current, const ToolPolyline &target) const;
 
   /// Computes successive inward offsets using Clipper2.
-  std::vector<ToolPolyline> computeOffsets(double toolpath_size,
+  std::vector<ToolPolyline> computeFullOffsets(const double &toolpath_size,
+                                               const ToolPolyline &contour) const;
+
+  /// Computes successive inward offsets using Clipper2.
+  std::vector<ToolPolyline> computeOffsets(const double &toolpath_size,
+                                           const ToolPolyline &contour) const;
+
+  /// Computes successive inward offsets using Clipper2.
+  std::vector<ToolPolyline> computeOffsets(const double &toolpath_size,
+                                           const int &max_offsets, 
                                            const ToolPolyline &contour) const;
 };
 

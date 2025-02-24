@@ -180,6 +180,7 @@ namespace fields2cover_ros {
 
     // set spiral offset
     tp_gen_->setToolpathSize(config.op_width);
+    tp_gen_->setMaxOffsets  (config.spiral_offset);
 
     publish_topics();
   }
