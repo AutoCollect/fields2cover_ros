@@ -522,6 +522,8 @@ ToolpathGenerator::computeFullOffsets(const double &toolpath_size,
 std::vector<ToolpathGenerator::ToolPolyline>
 ToolpathGenerator::computeOffsets(const double &toolpath_size,
                                   const ToolPolyline &contour) const {
+  
+  // ROS_ERROR("max offset: %d", max_offsets_);
   return computeOffsets(toolpath_size, max_offsets_, contour);                                      
 }
 
