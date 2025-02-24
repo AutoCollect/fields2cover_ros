@@ -116,19 +116,34 @@ namespace fields2cover_ros {
       std::string frame_id_;         ///< Frame ID for trajectory publishing.
 
       // first gps transfrom from utm frame to map frame
-      geometry_msgs::PoseStamped gps2map_transform_;     ///< Transform from GPS to map frame.
+      geometry_msgs::PoseStamped gps2map_transform_; ///< Transform from GPS to map frame.
 
       //===================================================
       // Spiral Path Generator
       //===================================================
       /// spiral path
-      ToolpathGenerator* tp_gen_;                        ///< spiral path generator
+      ToolpathGenerator* tp_gen_;    ///< spiral path generator
       
       /**
        * @brief generate single inward spiral given a 2d contour
        * @param contour a 2d contour.
        */
       void generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour);
+
+      /**
+       * @brief generate u turn swaths into headlands
+       * @param no_headlands no_headlands.
+       * @return F2CPath sparse path points.
+       */
+      F2CPath generateSwaths(F2CCell no_headlands);
+
+      /**
+       * @brief interpolate waypoints
+       * @param path F2CPath.
+       * @return waypoints.
+       */
+
+      std::vector<geometry_msgs::PoseStamped> interpolateWaypoints(const F2CPath& path);
 
       /**
        * @brief Transform GPS coordinates to map frame coordinates.

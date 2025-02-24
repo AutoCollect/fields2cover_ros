@@ -455,6 +455,9 @@ ToolpathGenerator::computeOffsets(double toolpath_size,
                                   const ToolPolyline &contour) const {
   // return results
   std::vector<ToolPolyline> offset_polygons;
+  
+  // first add contour into result
+  offset_polygons.push_back(contour);
 
   // Convert contour to Clipper2 PathD.
   Clipper2Lib::PathD polygon;
