@@ -123,8 +123,11 @@ namespace fields2cover_ros {
       //===================================================
       /// spiral path
       ToolpathGenerator* tp_gen_;                        ///< spiral path generator
-
-
+      
+      /**
+       * @brief generate single inward spiral given a 2d contour
+       * @param contour a 2d contour.
+       */
       void generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour);
 
       /**
