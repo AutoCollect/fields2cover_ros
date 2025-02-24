@@ -47,6 +47,9 @@ class ToolpathGenerator {
    */
   ToolpathGenerator(int smooth_number, double toolpath_size, bool smooth_boundary = true);
 
+  /// Set operation width
+  void setToolpathSize(const double &toolpath_size);
+
   /// Set the outer contour (must be a closed polyline).
   void setContour(const ToolPolyline &contour);
 

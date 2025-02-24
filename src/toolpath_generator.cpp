@@ -32,6 +32,10 @@ ToolpathGenerator::ToolpathGenerator(int smooth_number, double toolpath_size,
       "/spiral_path", 10, true);
 }
 
+void ToolpathGenerator::setToolpathSize(const double &toolpath_size) {
+  toolpath_size_ = toolpath_size;
+}
+
 void ToolpathGenerator::setContour(const ToolPolyline &contour) {
   contour_ = contour;
   if (contour_.empty()) {
@@ -315,11 +319,11 @@ void ToolpathGenerator::plotPath() const {
   spiral_marker.type = visualization_msgs::Marker::LINE_STRIP;
   spiral_marker.action = visualization_msgs::Marker::ADD;
   spiral_marker.pose.orientation.w = 1.0;
-  spiral_marker.scale.x = 0.25;  // Line width
+  spiral_marker.scale.x = 0.5;  // Line width
   // Set green color: (R=0, G=1, B=0, A=1)
   spiral_marker.color.r = 0.0;
   spiral_marker.color.g = 1.0;
-  spiral_marker.color.b = 0.0;
+  spiral_marker.color.b = 1.0;
   spiral_marker.color.a = 1.0;
 
   // Populate the marker with points from entry_spiral_
