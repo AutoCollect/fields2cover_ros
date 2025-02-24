@@ -120,7 +120,7 @@ namespace fields2cover_ros {
     publish_2d_gps_border(polygon_st);
     //----------------------------------------------------------
     // occupancy grid 2D map creation & publish
-    // generateGrid(polygon_st);
+    generateGrid(polygon_st);
     //----------------------------------------------------------
     // clear the cache
     polygon_st.polygon.points.clear();
@@ -295,9 +295,9 @@ namespace fields2cover_ros {
     // publish topics
     publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
     //========================================================
-    // // save path file each modification step
-    // savePath(fixed_pattern_plan);
-    // //========================================================
+    // save path file each modification step
+    savePath(fixed_pattern_plan);
+    //========================================================
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
