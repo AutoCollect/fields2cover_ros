@@ -119,11 +119,13 @@ namespace fields2cover_ros {
       geometry_msgs::PoseStamped gps2map_transform_; ///< Transform from GPS to map frame.
 
       //===================================================
-      // Spiral Path Generator
+      // Spiral Path Param
       //===================================================
       /// spiral path
       ToolpathGenerator* tp_gen_;    ///< spiral path generator
-      
+
+      bool m_spiral_path_ = {false}; ///< flag to spiral path generation
+
       /**
        * @brief generate single inward spiral given a 2d contour
        * @param contour a 2d contour.

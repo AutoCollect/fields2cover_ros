@@ -341,9 +341,9 @@ void ToolpathGenerator::plotPath() const {
   first_point_marker.action = visualization_msgs::Marker::ADD;
   first_point_marker.pose.orientation.w = 1.0;
   // Set a larger scale for the sphere (big point)
-  first_point_marker.scale.x = 1.0;
-  first_point_marker.scale.y = 1.0;
-  first_point_marker.scale.z = 1.0;
+  first_point_marker.scale.x = 2.0;
+  first_point_marker.scale.y = 2.0;
+  first_point_marker.scale.z = 2.0;
   // Set blue color: (R=0, G=0, B=1, A=1)
   first_point_marker.color.r = 0.0;
   first_point_marker.color.g = 0.0;
@@ -365,9 +365,9 @@ void ToolpathGenerator::plotPath() const {
   last_point_marker.action = visualization_msgs::Marker::ADD;
   last_point_marker.pose.orientation.w = 1.0;
   // Set a larger scale for the sphere (big point)
-  last_point_marker.scale.x = 1.0;
-  last_point_marker.scale.y = 1.0;
-  last_point_marker.scale.z = 1.0;
+  last_point_marker.scale.x = 2.0;
+  last_point_marker.scale.y = 2.0;
+  last_point_marker.scale.z = 2.0;
   // Set red color: (R=1, G=0, B=0, A=1)
   last_point_marker.color.r = 1.0;
   last_point_marker.color.g = 0.0;

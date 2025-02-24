@@ -19,6 +19,7 @@
 #include <dynamic_reconfigure/server.h>
 #include <nav_msgs/Path.h> // for fixed pattern plan topic publish
 #include <geometry_msgs/PoseArray.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // for converting quaternions
 #include <tf2_ros/transform_listener.h>
@@ -38,11 +39,11 @@ using ToolPoint = ToolpathGenerator::ToolPoint;
 namespace fields2cover_ros {
     
   void VisualizerNode::init_VisualizerNode() {
-    field_polygon_publisher_      = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/border",       1, true);
-    field_2d_border_publisher_    = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/border_2d",    1, true);
+    field_polygon_publisher_      = public_node_handle_.advertise<geometry_msgs::PolygonStamped>  ("/field/border",       10, true);
+    field_2d_border_publisher_    = public_node_handle_.advertise<visualization_msgs::Marker>     ("/field/border_2d",    10, true);
 
-    field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/no_headlands", 1, true);
-    field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/swaths",       1, true);
+    field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>  ("/field/no_headlands", 10, true);
+    field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::MarkerArray>("/field/swaths",       10, true);
 
     // Publisher for PoseArray
     fixed_pattern_plan_pose_array_pub_ = public_node_handle_.advertise<geometry_msgs::PoseArray>("/waypoints", 10, true);
@@ -138,17 +139,17 @@ namespace fields2cover_ros {
 
     field_no_headlands_publisher_.publish(polygon_st2);
     //========================================================
+    // u-turn swaths generation
+    F2CPath path = generateSwaths(no_headlands);
+    //========================================================
     // single inward spiral trajectory generation & publish
     generateSingleInwardSpiral(polygon_st2);
     //----------------------------------------------------------
     // clear no_headlands
     polygon_st2.polygon.points.clear();
     //========================================================
-    // u-turn swaths generation
-    F2CPath path = generateSwaths(no_headlands);
-    //========================================================
     // interpolation with waypoints
-    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
+    // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
     //========================================================
     // save path file each modification step
     // savePath(fixed_pattern_plan);
@@ -161,6 +162,7 @@ namespace fields2cover_ros {
       robot_.setMaxCurv(1.0 / config.turn_radius);
     }
 
+    // upath params
     m_swath_angle_    = config.swath_angle;
     m_headland_width_ = config.headland_width;
     automatic_angle_  = config.automatic_angle;
@@ -168,6 +170,12 @@ namespace fields2cover_ros {
     opt_turn_type_    = config.turn_type;
     opt_route_type_   = config.route_type;
     reverse_path_     = config.reverse_path;
+
+    // spiral params
+    m_spiral_path_    = config.spiral_path;
+
+    // For demonstration: smooth_number = 0, toolpath_size = 0.5, smooth_boundary = false.
+    tp_gen_ = new ToolpathGenerator(0, config.op_width, false);
 
     publish_topics();
   }
@@ -284,58 +292,116 @@ namespace fields2cover_ros {
       }
     }
 
+    visualization_msgs::MarkerArray marker_array;
+
     visualization_msgs::Marker marker_swaths;
     marker_swaths.header.frame_id = frame_id_;
+    marker_swaths.ns = "upath";
+    marker_swaths.id = 0;
     marker_swaths.header.stamp = ros::Time::now();
     marker_swaths.action = visualization_msgs::Marker::ADD;
     marker_swaths.pose.orientation.w = 1.0;
-    // marker_swaths.type = visualization_msgs::Marker::LINE_STRIP;
-    marker_swaths.type = visualization_msgs::Marker::POINTS;
+    marker_swaths.type = visualization_msgs::Marker::LINE_STRIP;
+    // marker_swaths.type = visualization_msgs::Marker::POINTS;
     marker_swaths.scale.x = 0.5;
     marker_swaths.scale.y = 0.5;
     marker_swaths.scale.z = 0.1;
 
     marker_swaths.color.r = 0.0;   // Red
-    marker_swaths.color.g = 0.0;   // Green
-    marker_swaths.color.b = 1.0;   // Blue (adjust to get the exact brightness you want)
+    marker_swaths.color.g = 1.0;   // Green
+    marker_swaths.color.b = 0.0;   // Blue (adjust to get the exact brightness you want)
     marker_swaths.color.a = 1.0;   // Full opacity
 
     // Transform each point in the polygon
     transformPoints(gps2map_transform_, path, marker_swaths);
-    field_swaths_publisher_.publish(marker_swaths);
+
+    // --- Create a marker for the first point of upath (blue big point) ---
+    visualization_msgs::Marker first_point_marker;
+    first_point_marker.header.frame_id = frame_id_;
+    first_point_marker.header.stamp = ros::Time::now();
+    first_point_marker.ns = "upath_first_point";
+    first_point_marker.id = 1;
+    first_point_marker.type = visualization_msgs::Marker::SPHERE;
+    first_point_marker.action = visualization_msgs::Marker::ADD;
+    first_point_marker.pose.orientation.w = 1.0;
+    // Set a larger scale for the sphere (big point)
+    first_point_marker.scale.x = 2.0;
+    first_point_marker.scale.y = 2.0;
+    first_point_marker.scale.z = 2.0;
+    // Set blue color: (R=0, G=0, B=1, A=1)
+    first_point_marker.color.r = 0.0;
+    first_point_marker.color.g = 0.0;
+    first_point_marker.color.b = 1.0;
+    first_point_marker.color.a = 1.0;
+    if (!marker_swaths.points.empty()) {
+      first_point_marker.pose.position.x = marker_swaths.points.front().x;
+      first_point_marker.pose.position.y = marker_swaths.points.front().y;
+      first_point_marker.pose.position.z = 0.0;
+    }
+
+    // --- Create a marker for the last point of upath (red big point) ---
+    visualization_msgs::Marker last_point_marker;
+    last_point_marker.header.frame_id = frame_id_;
+    last_point_marker.header.stamp = ros::Time::now();
+    last_point_marker.ns = "upath_last_point";
+    last_point_marker.id = 2;
+    last_point_marker.type = visualization_msgs::Marker::SPHERE;
+    last_point_marker.action = visualization_msgs::Marker::ADD;
+    last_point_marker.pose.orientation.w = 1.0;
+    // Set a larger scale for the sphere (big point)
+    last_point_marker.scale.x = 2.0;
+    last_point_marker.scale.y = 2.0;
+    last_point_marker.scale.z = 2.0;
+    // Set red color: (R=1, G=0, B=0, A=1)
+    last_point_marker.color.r = 1.0;
+    last_point_marker.color.g = 0.0;
+    last_point_marker.color.b = 0.0;
+    last_point_marker.color.a = 1.0;
+    if (!marker_swaths.points.empty()) {
+      last_point_marker.pose.position.x = marker_swaths.points.back().x;
+      last_point_marker.pose.position.y = marker_swaths.points.back().y;
+      last_point_marker.pose.position.z = 0.0;
+    }
+
+    marker_array.markers.push_back(marker_swaths);
+    marker_array.markers.push_back(first_point_marker);
+    marker_array.markers.push_back(last_point_marker);
+
+    // publish swaths
+    field_swaths_publisher_.publish(marker_array);
 
     return path;
   }
 
 
   void VisualizerNode::generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour) {
-    // Define several test polygons (outer contours only)
-    std::pair<std::string, ToolPolyline> polygon;
-    for (const auto& point : contour.polygon.points) {
-      polygon.second.push_back(ToolPoint {point.x, point.y});
+
+    if (!m_spiral_path_) {
+      tp_gen_->deleteMarkers();
     }
+    else {
+      // Define several test polygons (outer contours only)
+      std::pair<std::string, ToolPolyline> polygon;
+      for (const auto& point : contour.polygon.points) {
+        polygon.second.push_back(ToolPoint {point.x, point.y});
+      }
 
-    std::string         polygon_name    = polygon.first;
-    const ToolPolyline &polygon_contour = polygon.second;
+      std::string         polygon_name    = polygon.first;
+      const ToolPolyline &polygon_contour = polygon.second;
 
-    std::cout << "\n==== Processing Polygon: " << polygon_name << " ====\n";
-    // Create a ToolpathGenerator instance.
-    // For demonstration: smooth_number = 0, toolpath_size = 0.5, smooth_boundary = false.
-    double path_size = 6.0;
-    tp_gen_ = new ToolpathGenerator(0, path_size, false);
+      std::cout << "\n==== Processing Polygon: " << polygon_name << " ====\n";
+      tp_gen_->deleteMarkers ();    
+      tp_gen_->setPolygonName(polygon_name);
+      tp_gen_->setContour    (polygon_contour);
 
-    tp_gen_->deleteMarkers ();    
-    tp_gen_->setPolygonName(polygon_name);
-    tp_gen_->setContour    (polygon_contour);
-
-    try {
-        tp_gen_->archimedeanSpiral();
-        tp_gen_->plotPath();
-    } catch (const std::exception &e) {
-        std::cerr << "Error in processing polygon " << polygon_name << ": " << e.what() << "\n";
+      try {
+          tp_gen_->archimedeanSpiral();
+          tp_gen_->plotPath();
+      } catch (const std::exception &e) {
+          std::cerr << "Error in processing polygon " << polygon_name << ": " << e.what() << "\n";
+      }
     }
   }
-
 
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const F2CPath& path) {
     // interpolation with waypoints
