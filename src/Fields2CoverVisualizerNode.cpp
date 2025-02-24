@@ -315,7 +315,7 @@ namespace fields2cover_ros {
     marker_swaths.color.r = 0.0;   // Red
     marker_swaths.color.g = 1.0;   // Green
     marker_swaths.color.b = 0.0;   // Blue (adjust to get the exact brightness you want)
-    marker_swaths.color.a = 1.0;   // Full opacity
+    marker_swaths.color.a = 0.5;   // Full opacity
 
     // Transform each point in the polygon
     transformPoints(gps2map_transform_, path, marker_swaths);
@@ -326,13 +326,14 @@ namespace fields2cover_ros {
     first_point_marker.header.stamp = ros::Time::now();
     first_point_marker.ns = "upath_first_point";
     first_point_marker.id = 1;
-    first_point_marker.type = visualization_msgs::Marker::SPHERE;
+    // first_point_marker.type = visualization_msgs::Marker::SPHERE;
+    first_point_marker.type   = visualization_msgs::Marker::CUBE;
     first_point_marker.action = visualization_msgs::Marker::ADD;
     first_point_marker.pose.orientation.w = 1.0;
     // Set a larger scale for the sphere (big point)
-    first_point_marker.scale.x = 2.0;
-    first_point_marker.scale.y = 2.0;
-    first_point_marker.scale.z = 2.0;
+    first_point_marker.scale.x = 3.0;
+    first_point_marker.scale.y = 3.0;
+    first_point_marker.scale.z = 3.0;
     // Set blue color: (R=0, G=0, B=1, A=1)
     first_point_marker.color.r = 0.0;
     first_point_marker.color.g = 0.0;
@@ -354,9 +355,9 @@ namespace fields2cover_ros {
     last_point_marker.action = visualization_msgs::Marker::ADD;
     last_point_marker.pose.orientation.w = 1.0;
     // Set a larger scale for the sphere (big point)
-    last_point_marker.scale.x = 2.0;
-    last_point_marker.scale.y = 2.0;
-    last_point_marker.scale.z = 2.0;
+    last_point_marker.scale.x = 3.0;
+    last_point_marker.scale.y = 3.0;
+    last_point_marker.scale.z = 3.0;
     // Set red color: (R=1, G=0, B=0, A=1)
     last_point_marker.color.r = 1.0;
     last_point_marker.color.g = 0.0;
