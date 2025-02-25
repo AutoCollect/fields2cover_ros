@@ -59,6 +59,17 @@ class ToolpathGenerator {
   /// Set the max offsets threshold
   void setMaxOffsets(const int &max_offsets);
 
+  /// Set bool flag for spiral contour clock-wise or anti-clockwise
+  void setSpiralReversed(const bool &spiral_reversed);
+
+  /// given an point, re-generate/re-arrange contour, so that:
+  /// 1. the first point of contour is the closest point to given point
+  /// 2. think about clockwise and anti-clockwise case
+  ToolPolyline generateContour(const ToolPoint &point, const ToolPolyline &contour);
+
+  ToolPolyline generateContour(const ToolPoint &point, const ToolPolyline &contour, 
+                               const bool &is_reversed);
+
   /// Generate the toolpath using the Archimedean spiral method.
   void archimedeanSpiral();
 
@@ -132,6 +143,7 @@ class ToolpathGenerator {
   double entry_d_0_;                  // Current parameter along the polyline.
   std::vector<ToolPolyline> offsets_; // Computed inward offset polylines.
   int max_offsets_;                   // max offsets threshold.
+  bool spiral_reversed_;              // spiral contour clock-wise or anti-clockwise flag
 
   int smooth_number_;
   double toolpath_size_;

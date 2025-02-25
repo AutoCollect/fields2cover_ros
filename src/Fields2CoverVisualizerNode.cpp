@@ -179,8 +179,9 @@ namespace fields2cover_ros {
     m_spiral_path_    = config.spiral_path;
 
     // set spiral offset
-    tp_gen_->setToolpathSize(config.op_width);
-    tp_gen_->setMaxOffsets  (config.spiral_offset);
+    tp_gen_->setToolpathSize  (config.op_width);
+    tp_gen_->setMaxOffsets    (config.spiral_offset);
+    // tp_gen_->setSpiralReversed(config.spiral_reversed);
 
     publish_topics();
   }
@@ -390,11 +391,26 @@ namespace fields2cover_ros {
       std::pair<std::string, ToolPolyline> polygon;
       for (const auto& point : contour.polygon.points) {
         polygon.second.push_back(ToolPoint {point.x, point.y});
+        // std::cout << "{" << point.x << "," << point.y << "}," << std::endl;
       }
 
-      std::string         polygon_name    = polygon.first;
+      //============================================
+      // 1. raw polygon
+      std::string polygon_name            = polygon.first;
       const ToolPolyline &polygon_contour = polygon.second;
-
+      //============================================
+      // 2. re-generate/re-arrange contour sequence before offset
+      //   a. contour sequence start point is close to the given point
+      //   b. closewise or anti-clockwise direction
+      //--------------------------------------------
+      // std::string polygon_name = polygon.first;
+      // const ToolPolyline &polygon_contour = 
+      //   tp_gen_->generateContour(polygon.second.front(), polygon.second);
+      //--------------------------------------------
+      // for (const auto& point : polygon_contour) {
+      //   std::cout << point.x << "," << point.y << std::endl;
+      // }
+      //============================================  
       std::cout << "\n==== Processing Polygon: " << polygon_name << " ====\n";
       tp_gen_->deleteMarkers ();    
       tp_gen_->setPolygonName(polygon_name);

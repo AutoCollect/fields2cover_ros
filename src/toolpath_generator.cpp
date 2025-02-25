@@ -26,11 +26,10 @@ ToolpathGenerator::ToolpathGenerator(int smooth_number, double toolpath_size,
       smooth_boundary_(smooth_boundary),
       entry_d_0_(0.0),
       max_offsets_(1),
+      spiral_reversed_(false),
       poly_name_("Toolpath") {
-  offset_pub_ = nh_.advertise<visualization_msgs::MarkerArray>(
-      "/offset_polygon", 10, true);
-  path_pub_ = nh_.advertise<visualization_msgs::MarkerArray>(
-      "/spiral_path", 10, true);
+  offset_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("/offset_polygon", 10, true);
+  path_pub_   = nh_.advertise<visualization_msgs::MarkerArray>("/spiral_path",    10, true);
 }
 
 void ToolpathGenerator::setToolpathSize(const double &toolpath_size) {
@@ -56,7 +55,55 @@ void ToolpathGenerator::setMaxOffsets(const int &max_offsets) {
   max_offsets_ = max_offsets;
 }
 
+void ToolpathGenerator::setSpiralReversed(const bool &spiral_reversed) {
+  spiral_reversed_ = spiral_reversed;
+}
+
 // --------------------- Helper Functions ---------------------
+ToolpathGenerator::ToolPolyline ToolpathGenerator::generateContour(
+    const ToolPoint &point, 
+    const ToolPolyline &contour) {
+
+  // ROS_ERROR("spiral_reversed = %d", int(spiral_reversed_));
+  return generateContour(point, contour, spiral_reversed_);
+}
+
+
+ToolpathGenerator::ToolPolyline ToolpathGenerator::generateContour(
+    const ToolPoint    &point, 
+    const ToolPolyline &contour, const bool &is_reversed) {
+
+  // Check empty
+  if (contour.empty()) return {};
+
+  // Work on a local copy so that the input contour remains unchanged.
+  ToolPolyline poly = contour;
+
+  // Compute squared Euclidean distance to avoid costly sqrt.
+  auto sqDist = [&point](const ToolPoint &p) -> double {
+    double dx = p.x - point.x;
+    double dy = p.y - point.y;
+    return dx * dx + dy * dy;
+  };
+    
+  // Find the point in the contour closest to the given point.
+  auto closestIt = std::min_element(poly.begin(), poly.end(),
+    [&](const ToolPoint &a, const ToolPoint &b) {
+      return sqDist(a) < sqDist(b);
+  });
+    
+  // Rotate the polygon so that the closest point becomes the first element.
+  std::rotate(poly.begin(), closestIt, poly.end());
+
+  // If is_reversed is true, reverse the order (except the starting point)
+  if (is_reversed) {
+    std::reverse(poly.begin() + 1, poly.end());
+  }
+
+  ROS_ERROR("poly front: %f, %f", poly.front().x, poly.front().y);
+  return poly;
+}
+
 double ToolpathGenerator::computeTotalLength(
     const ToolPolyline &points) const {
   double total = 0.0;
