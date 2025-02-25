@@ -151,6 +151,8 @@ class ToolpathGenerator {
   ToolPolyline contour_;              // The outer contour.
   std::string poly_name_;             // Polygon name.
 
+  // --------------------- ROS Publisher ---------------------
+
   ros::NodeHandle nh_;                // ROS node handle.
   mutable ros::Publisher offset_pub_; // ROS publisher for offset polygons visualization.
   mutable ros::Publisher path_pub_;   // ROS publisher for path visualization.
