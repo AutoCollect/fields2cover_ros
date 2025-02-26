@@ -387,40 +387,40 @@ namespace fields2cover_ros {
       tp_gen_->deleteMarkers();
     }
     else {
-      // Define several test polygons (outer contours only)
-      std::pair<std::string, ToolPolyline> polygon;
-      for (const auto& point : contour.polygon.points) {
-        polygon.second.push_back(ToolPoint {point.x, point.y});
-        // std::cout << "{" << point.x << "," << point.y << "}," << std::endl;
-      }
-
+      tp_gen_->deleteMarkers ();
       //============================================
-      // 1. raw polygon
-      std::string polygon_name            = polygon.first;
-      const ToolPolyline &polygon_contour = polygon.second;
+      ToolPolyline polygon;
+      for (const auto& point : contour.polygon.points) {
+        polygon.push_back(ToolPoint {point.x, point.y});
+      }
+      std::string name = "Paddock_Test";
+      std::cout << "\n==== Processing Polygon: " << name << " ====\n";
+      //============================================
+      // 1. raw polygon data
+      // tp_gen_->setPolygonName(name);
+      // tp_gen_->setContour(polygon);
       //============================================
       // 2. re-generate/re-arrange contour sequence before offset
       //   a. contour sequence start point is close to the given point
       //   b. closewise or anti-clockwise direction
       //--------------------------------------------
-      // std::string polygon_name = polygon.first;
+      // tp_gen_->setPolygonName(name);
       // const ToolPolyline &polygon_contour = 
-      //   tp_gen_->generateContour(polygon.second.front(), polygon.second);
-      //--------------------------------------------
-      // for (const auto& point : polygon_contour) {
-      //   std::cout << point.x << "," << point.y << std::endl;
-      // }
-      //============================================  
-      std::cout << "\n==== Processing Polygon: " << polygon_name << " ====\n";
-      tp_gen_->deleteMarkers ();    
-      tp_gen_->setPolygonName(polygon_name);
-      tp_gen_->setContour    (polygon_contour);
-
+      //   tp_gen_->generateContour(polygon.front(), polygon);
+      // tp_gen_->setContour(polygon_contour);
+      //============================================
+      // 3. resampling + relocate
+      tp_gen_->setPolygonName(name);
+      // tp_gen_->setContourResampleStep(2.5); // meter
+      // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
+      // tp_gen_->setSpiralReversed(is_reversed);
+      tp_gen_->setContour(polygon);
+      //============================================
       try {
           tp_gen_->archimedeanSpiral();
           tp_gen_->plotPath();
       } catch (const std::exception &e) {
-          std::cerr << "Error in processing polygon " << polygon_name << ": " << e.what() << "\n";
+          std::cerr << "Error in processing polygon " << name << ": " << e.what() << "\n";
       }
     }
   }
