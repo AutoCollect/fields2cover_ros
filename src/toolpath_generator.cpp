@@ -19,10 +19,10 @@ double distance(const ToolpathGenerator::ToolPoint &a,
 }  // namespace
 
 // --------------------- Constructor & Setters ---------------------
-ToolpathGenerator::ToolpathGenerator(int smooth_number, double toolpath_size,
+ToolpathGenerator::ToolpathGenerator(int smooth_number, double op_width,
                                      bool smooth_boundary)
     : smooth_number_(smooth_number),
-      toolpath_size_(toolpath_size),
+      op_width_(op_width),
       smooth_boundary_(smooth_boundary),
       entry_d_0_(0.0),
       max_offsets_(1),
@@ -32,8 +32,8 @@ ToolpathGenerator::ToolpathGenerator(int smooth_number, double toolpath_size,
   path_pub_   = nh_.advertise<visualization_msgs::MarkerArray>("/spiral_path",    10, true);
 }
 
-void ToolpathGenerator::setToolpathSize(const double &toolpath_size) {
-  toolpath_size_ = toolpath_size;
+void ToolpathGenerator::setOperationWidth(const double &op_width) {
+  op_width_ = op_width;
 }
 
 void ToolpathGenerator::setContour(const ToolPolyline &contour) {
@@ -302,20 +302,20 @@ ToolpathGenerator::getRelatedLine(const ToolPoint &point,
   return {nearest, {nearest.x + tx, nearest.y + ty}};
 }
 
-double ToolpathGenerator::advanceParameter(double d0, double toolpath_size,
+double ToolpathGenerator::advanceParameter(double d0, double op_width,
                                              const ToolPolyline &points) const {
   double total_length = computeTotalLength(points);
   if (total_length < 1e-9)
     return d0;
-  double increment = toolpath_size / total_length;
+  double increment = op_width / total_length;
   return std::min(d0 + increment, 1.0);
 }
 
-double ToolpathGenerator::computeNextTurnParam(double d0, double toolpath_size,
+double ToolpathGenerator::computeNextTurnParam(double d0, double op_width,
                                                  const ToolPolyline *points) const {
   if (points == nullptr)
-    return std::min(d0 + toolpath_size * 0.01, 1.0);
-  return advanceParameter(d0, toolpath_size, *points);
+    return std::min(d0 + op_width * 0.01, 1.0);
+  return advanceParameter(d0, op_width, *points);
 }
 
 void ToolpathGenerator::blendPoints(ToolPolyline &current,
@@ -508,7 +508,7 @@ void ToolpathGenerator::deleteMarkers() const {
 
 // --------------------- Modified computeOffsets ---------------------
 std::vector<ToolpathGenerator::ToolPolyline>
-ToolpathGenerator::computeFullOffsets(const double &toolpath_size,
+ToolpathGenerator::computeFullOffsets(const double &op_width,
                                       const ToolPolyline &contour) const {
   // return results
   std::vector<ToolPolyline> offset_polygons;
@@ -536,7 +536,7 @@ ToolpathGenerator::computeFullOffsets(const double &toolpath_size,
                       Clipper2Lib::EndType::Polygon);
 
     Clipper2Lib::Paths64 offsetPaths;
-    offsetter.Execute(toolpath_size, offsetPaths);
+    offsetter.Execute(op_width, offsetPaths);
 
     // Stop if no further offset polygon is produced.
     if (offsetPaths.empty())
@@ -568,15 +568,15 @@ ToolpathGenerator::computeFullOffsets(const double &toolpath_size,
 }
 
 std::vector<ToolpathGenerator::ToolPolyline>
-ToolpathGenerator::computeOffsets(const double &toolpath_size,
+ToolpathGenerator::computeOffsets(const double &op_width,
                                   const ToolPolyline &contour) const {
   
   // ROS_ERROR("max offset: %d", max_offsets_);
-  return computeOffsets(toolpath_size, max_offsets_, contour);                                      
+  return computeOffsets(op_width, max_offsets_, contour);                                      
 }
 
 std::vector<ToolpathGenerator::ToolPolyline>
-ToolpathGenerator::computeOffsets(const double &toolpath_size,
+ToolpathGenerator::computeOffsets(const double &op_width,
                                   const int &max_offsets,
                                   const ToolPolyline &contour) const {
   // return results
@@ -611,7 +611,7 @@ ToolpathGenerator::computeOffsets(const double &toolpath_size,
                       Clipper2Lib::EndType::Polygon);
 
     Clipper2Lib::Paths64 offsetPaths;
-    offsetter.Execute(toolpath_size, offsetPaths);
+    offsetter.Execute(op_width, offsetPaths);
 
     // Stop if no further offset polygon is produced.
     if (offsetPaths.empty())
@@ -656,14 +656,14 @@ void ToolpathGenerator::archimedeanSpiral() {
 
   std::cout << "Outer contour vertices: " << contour_.size() << "\n";
 
-  const double delta = toolpath_size_ * scale_;
+  const double delta = op_width_ * scale_;
   offsets_ = computeOffsets(-delta, contour_);
   std::cout << "Number of computed offsets: " << offsets_.size() << "\n";
 
   inward_spiral_path_.clear();
   for (size_t i = 0; i < offsets_.size(); ++i) {
     const ToolPolyline &off = offsets_[i];
-    double next_param = computeNextTurnParam(entry_d_0_, toolpath_size_, &off);
+    double next_param = computeNextTurnParam(entry_d_0_, op_width_, &off);
     std::cout << "\n--- Processing offset " << i + 1 << " of "
               << offsets_.size() << " ---\n";
     std::cout << "  Computed turning parameter: " << next_param << "\n";
@@ -696,7 +696,7 @@ void ToolpathGenerator::archimedeanSpiralTrick() {
   }
 
   ToolPolyline contour1 = contour_;
-  offsets_ = computeOffsets(toolpath_size_, contour1);
+  offsets_ = computeOffsets(op_width_, contour1);
   for (size_t i = 0; i < offsets_.size() - 1; ++i) {
     ToolPoint entry_p0 = getPointFromOffset(entry_d_0_, offsets_[i]);
     double entry_d1 = findNearestParam(entry_p0, offsets_[i + 1]);
@@ -704,7 +704,7 @@ void ToolpathGenerator::archimedeanSpiralTrick() {
     ToolPolyline entry_half = selectSubpolyline(offsets_[i], entry_d_0_);
     auto related_line = getRelatedLine(entry_p1, offsets_[i + 1]);
     double entry_cutting_d = intersectParamWithLine(entry_half, related_line);
-    double d0 = advanceParameter(entry_d_0_, toolpath_size_, offsets_[i]);
+    double d0 = advanceParameter(entry_d_0_, op_width_, offsets_[i]);
     ToolPoint v = getPointFromOffset(d0, offsets_[i]);
     double new_d0 = findNearestParam(v, entry_half);
     if (entry_cutting_d > new_d0)
@@ -716,7 +716,7 @@ void ToolpathGenerator::archimedeanSpiralTrick() {
     entry_d_0_ = entry_d1;
   }
   double final_d1 =
-      computeNextTurnParam(entry_d_0_, toolpath_size_, &offsets_.back());
+      computeNextTurnParam(entry_d_0_, op_width_, &offsets_.back());
   ToolPolyline final_segment = selectSubpolyline(offsets_.back(), entry_d_0_,
                                                   final_d1);
   inward_spiral_path_.insert(inward_spiral_path_.end(), final_segment.begin(),
@@ -731,7 +731,7 @@ void ToolpathGenerator::archimedeanSpiralSmooth() {
   }
 
   ToolPolyline contour1 = contour_;
-  offsets_ = computeOffsets(toolpath_size_, contour1);
+  offsets_ = computeOffsets(op_width_, contour1);
   for (size_t i = 0; i < offsets_.size() - 1; ++i) {
     ToolPolyline current_half = selectSubpolyline(offsets_[i], entry_d_0_);
     ToolPolyline next_half;

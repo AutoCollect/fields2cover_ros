@@ -42,13 +42,13 @@ class ToolpathGenerator {
    * @brief Construct a new ToolpathGenerator object.
    *
    * @param smooth_number Number of smoothing iterations to apply.
-   * @param toolpath_size Offset (step) distance used for generating the toolpath.
+   * @param op_width Offset (step) distance used for generating the toolpath.
    * @param smooth_boundary Whether to smooth the outer boundary.
    */
-  ToolpathGenerator(int smooth_number, double toolpath_size, bool smooth_boundary = true);
+  ToolpathGenerator(int smooth_number, double op_width, bool smooth_boundary = true);
 
   /// Set operation width
-  void setToolpathSize(const double &toolpath_size);
+  void setOperationWidth(const double &op_width);
 
   /// Set the outer contour (must be a closed polyline).
   void setContour(const ToolPolyline &contour);
@@ -137,6 +137,9 @@ class ToolpathGenerator {
   }
 
  private:
+
+  // --------------------- Constant ---------------------
+
   const double scale_ = 1000.0;       // Path64 scale factor
 
   // --------------------- Spiral Path Main Input ---------------------
@@ -146,8 +149,9 @@ class ToolpathGenerator {
 
   // --------------------- Spiral Path Params ---------------------
   
-  double toolpath_size_;              // operation width
+  double op_width_;                   // operation width
   int max_offsets_;                   // max offsets number threshold.
+
   bool spiral_reversed_;              // spiral contour clock-wise or anti-clockwise flag
   int smooth_number_;
   bool smooth_boundary_;
@@ -191,27 +195,27 @@ class ToolpathGenerator {
   std::pair<ToolPoint, ToolPoint> getRelatedLine(const ToolPoint &point,
                                                  const ToolPolyline &points) const;
 
-  /// Advances the parameter along the polyline by a distance equal to toolpath_size.
-  double advanceParameter(double d0, double toolpath_size,
+  /// Advances the parameter along the polyline by a distance equal to op_width.
+  double advanceParameter(double d0, double op_width,
                           const ToolPolyline &points) const;
 
   /// Computes the next turning parameter along the polyline.
-  double computeNextTurnParam(double d0, double toolpath_size,
+  double computeNextTurnParam(double d0, double op_width,
                               const ToolPolyline *points = nullptr) const;
 
   /// Blends the points in 'current' with corresponding points in 'target' (in place).
   void blendPoints(ToolPolyline &current, const ToolPolyline &target) const;
 
   /// Computes successive inward offsets using Clipper2.
-  std::vector<ToolPolyline> computeFullOffsets(const double &toolpath_size,
+  std::vector<ToolPolyline> computeFullOffsets(const double &op_width,
                                                const ToolPolyline &contour) const;
 
   /// Computes successive inward offsets using Clipper2.
-  std::vector<ToolPolyline> computeOffsets(const double &toolpath_size,
+  std::vector<ToolPolyline> computeOffsets(const double &op_width,
                                            const ToolPolyline &contour) const;
 
   /// Computes successive inward offsets using Clipper2.
-  std::vector<ToolPolyline> computeOffsets(const double &toolpath_size,
+  std::vector<ToolPolyline> computeOffsets(const double &op_width,
                                            const int &max_offsets, 
                                            const ToolPolyline &contour) const;
 };

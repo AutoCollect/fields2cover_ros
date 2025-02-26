@@ -100,7 +100,7 @@ namespace fields2cover_ros {
     robot_.setMaxCurv(0.5); // 1 / radius: 1/2 = 0.5
     double headland_width = 3.0 * robot_.getCovWidth();
     //----------------------------------------------------------
-    // For demonstration: smooth_number = 0, toolpath_size = 0.5, smooth_boundary = false.
+    // For demonstration: smooth_number = 0, op_width = 0.5, smooth_boundary = false.
     // set default value
     tp_gen_ = new ToolpathGenerator(0, 6.0, false);
   }
@@ -179,7 +179,7 @@ namespace fields2cover_ros {
     m_spiral_path_    = config.spiral_path;
 
     // set spiral offset
-    tp_gen_->setToolpathSize  (config.op_width);
+    tp_gen_->setOperationWidth(config.op_width);
     tp_gen_->setMaxOffsets    (config.spiral_offset);
     // tp_gen_->setSpiralReversed(config.spiral_reversed);
 
