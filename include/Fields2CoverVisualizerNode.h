@@ -18,6 +18,7 @@
 #include <geometry_msgs/PointStamped.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <geographic_msgs/GeoPoint.h>
+#include <nav_msgs/Odometry.h>
 
 #include <fields2cover_ros/F2CConfig.h>
 #include <fields2cover.h>
@@ -80,6 +81,19 @@ namespace fields2cover_ros {
       nav_msgs::OccupancyGrid occupancy_grid_;  ///< Occupancy grid for the map.
       sensor_msgs::NavSatFix gps_;              ///< GPS data.
       f2c::Transform transf_;                   ///< Transformation utility.
+
+
+      //===================================================
+      // ROS Subscriber
+      //===================================================
+
+      ros::Subscriber odom_sub_;
+      nav_msgs::Odometry latest_odom_;
+    
+      // Callback to update the latest odometry data
+      void odomCallback(const nav_msgs::Odometry::ConstPtr& msg) {
+        latest_odom_ = *msg;
+      }
 
       //===================================================
       // Field2Cover param

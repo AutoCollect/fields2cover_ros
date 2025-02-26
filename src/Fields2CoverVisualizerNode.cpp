@@ -51,6 +51,9 @@ namespace fields2cover_ros {
     // Publisher for the occupancy grid map
     map_pub_ = public_node_handle_.advertise<nav_msgs::OccupancyGrid>("/map", 1, true);
 
+    // Subscriber
+    odom_sub_ = public_node_handle_.subscribe("/odom_global", 10, &VisualizerNode::odomCallback, this);
+
     //----------------------------------------------------------
     // field file
     //----------------------------------------------------------
@@ -183,6 +186,12 @@ namespace fields2cover_ros {
     tp_gen_->setMaxOffsets    (config.spiral_offset);
     tp_gen_->setContourResampleStep(config.resample_step);
     tp_gen_->setSpiralReversed(config.spiral_reversed);
+
+    // Use the cached odometry data to set the spiral entry point
+    double x = latest_odom_.pose.pose.position.x;
+    double y = latest_odom_.pose.pose.position.y;
+    tp_gen_->setSpiralEntryPoint(ToolPoint{x, y});
+    // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
 
     publish_topics();
   }
@@ -412,7 +421,7 @@ namespace fields2cover_ros {
       //============================================
       // 3. resampling + relocate
       tp_gen_->setPolygonName(name);
-      tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
+      // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
       tp_gen_->setContour(polygon);
       //============================================
       try {
