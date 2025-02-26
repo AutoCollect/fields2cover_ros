@@ -139,17 +139,24 @@ class ToolpathGenerator {
  private:
   const double scale_ = 1000.0;       // Path64 scale factor
 
-  ToolPolyline inward_spiral_path_;   // final inward spiral toolpath.
-  double entry_d_0_;                  // Current parameter along the polyline.
-  std::vector<ToolPolyline> offsets_; // Computed inward offset polylines.
-  int max_offsets_;                   // max offsets threshold.
-  bool spiral_reversed_;              // spiral contour clock-wise or anti-clockwise flag
-
-  int smooth_number_;
-  double toolpath_size_;
-  bool smooth_boundary_;
+  // --------------------- Spiral Path Main Input ---------------------
+  
   ToolPolyline contour_;              // The outer contour.
   std::string poly_name_;             // Polygon name.
+
+  // --------------------- Spiral Path Params ---------------------
+  
+  double toolpath_size_;              // operation width
+  int max_offsets_;                   // max offsets number threshold.
+  bool spiral_reversed_;              // spiral contour clock-wise or anti-clockwise flag
+  int smooth_number_;
+  bool smooth_boundary_;
+
+  // --------------------- Spiral Path Output ---------------------
+  
+  ToolPolyline inward_spiral_path_;   // final inward spiral toolpath.
+  std::vector<ToolPolyline> offsets_; // Computed inward offset polylines.
+  double entry_d_0_;                  // Current parameter along the polyline.
 
   // --------------------- ROS Publisher ---------------------
 
