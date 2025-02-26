@@ -55,14 +55,128 @@ void ToolpathGenerator::setMaxOffsets(const int &max_offsets) {
   max_offsets_ = max_offsets;
 }
 
+void ToolpathGenerator::setSpiralEntryPoint(const ToolPoint &spiral_entry_point) {
+  spiral_entry_point_ = spiral_entry_point;
+}
+
+void ToolpathGenerator::setContourResampleStep(const double &resample_step) {
+  contour_resample_step_ = resample_step;
+}
+
 void ToolpathGenerator::setSpiralReversed(const bool &spiral_reversed) {
   spiral_reversed_ = spiral_reversed;
 }
 
 // --------------------- Helper Functions ---------------------
+/**
+ * @brief Resamples a polygon contour to achieve uniform spacing between points.
+ *
+ * This function generates a new polygon contour such that the distance between 
+ * consecutive points does not exceed a specified maximum spacing (sampleDistance). 
+ * If the gap between two original vertices is larger than sampleDistance, intermediate 
+ * points are added using linear interpolation. If an interpolated point lies within a 
+ * given tolerance of an original vertex, that vertex is used instead to preserve sharp features.
+ *
+ * @param contour The original polygon contour.
+ * @param sampleDistance The desired maximum distance between consecutive points.
+ * @param closeContour If true, the output polygon will be closed by connecting the last point back to the first.
+ * @param tolerance Optional tolerance used to decide if an interpolated point is close enough to an original vertex 
+ *                  (default: std::numeric_limits<double>::epsilon() * 100).
+ * @return ToolpathGenerator::ToolPolyline The uniformly resampled polygon contour.
+ */
+ ToolpathGenerator::ToolPolyline ToolpathGenerator::resampleContour(
+    const ToolpathGenerator::ToolPolyline &contour, 
+    const double sampleDistance, 
+    bool closeContour,
+    double tolerance) const {
+
+  ToolPolyline newContour;
+  if (contour.size() < 2 || sampleDistance <= 0.0) {
+    return contour; // Nothing to resample.
+  }
+
+  // Start with the first point.
+  newContour.push_back(contour.front());
+  ToolPoint lastPoint = contour.front();
+  double accumulated = 0.0;
+
+  // Process each segment of the contour.
+  for (size_t i = 1; i < contour.size(); i++) {
+    double dx = contour[i].x - lastPoint.x;
+    double dy = contour[i].y - lastPoint.y;
+    double segmentLength = std::sqrt(dx*dx + dy*dy);
+    
+    // Skip segments that are too short.
+    if (segmentLength < tolerance)
+      continue;
+    
+    // While the remaining segment length combined with accumulated distance
+    // is enough for at least one new sample point:
+    while (accumulated + segmentLength >= sampleDistance) {
+      double remain = sampleDistance - accumulated;
+      double t = remain / segmentLength;
+      // Linearly interpolate a new point along the segment.
+      ToolPoint newPoint = {
+        lastPoint.x + t * dx,
+        lastPoint.y + t * dy
+      };
+      
+      // If the new point is within tolerance of the original vertex, snap to it.
+      double diffX = contour[i].x - newPoint.x;
+      double diffY = contour[i].y - newPoint.y;
+      if (std::sqrt(diffX*diffX + diffY*diffY) < tolerance) {
+        newPoint = contour[i];
+      }
+      
+      newContour.push_back(newPoint);
+      
+      // Update the segment: reset the accumulated distance and move the starting point.
+      lastPoint = newPoint;
+      dx = contour[i].x - lastPoint.x;
+      dy = contour[i].y - lastPoint.y;
+      segmentLength = std::sqrt(dx*dx + dy*dy);
+      accumulated = 0.0;
+    }
+    
+    // Carry forward any leftover distance.
+    accumulated += segmentLength;
+    lastPoint = contour[i];
+  }
+
+  // Optionally close the polygon by connecting the last point back to the first.
+  if (closeContour) {
+    double dx = newContour.front().x - newContour.back().x;
+    double dy = newContour.front().y - newContour.back().y;
+    double closingDistance = std::sqrt(dx*dx + dy*dy);
+    
+    // Insert intermediate points if needed.
+    while (closingDistance >= sampleDistance) {
+      double t = sampleDistance / closingDistance;
+      ToolPoint newPoint = {
+          newContour.back().x + t * dx,
+          newContour.back().y + t * dy
+      };
+      // Snap to the first point if within tolerance.
+      double diffX = newContour.front().x - newPoint.x;
+      double diffY = newContour.front().y - newPoint.y;
+      if (std::sqrt(diffX*diffX + diffY*diffY) < tolerance) {
+          newPoint = newContour.front();
+      }
+      newContour.push_back(newPoint);
+      
+      dx = newContour.front().x - newContour.back().x;
+      dy = newContour.front().y - newContour.back().y;
+      closingDistance = std::sqrt(dx*dx + dy*dy);
+    }
+  }
+
+  return newContour;
+}
+
+
 ToolpathGenerator::ToolPolyline ToolpathGenerator::generateContour(
     const ToolPoint &point, 
-    const ToolPolyline &contour) {
+    const ToolPolyline &contour) const {
 
   // ROS_ERROR("spiral_reversed = %d", int(spiral_reversed_));
   return generateContour(point, contour, spiral_reversed_);
@@ -71,7 +185,7 @@ ToolpathGenerator::ToolPolyline ToolpathGenerator::generateContour(
 
 ToolpathGenerator::ToolPolyline ToolpathGenerator::generateContour(
     const ToolPoint    &point, 
-    const ToolPolyline &contour, const bool &is_reversed) {
+    const ToolPolyline &contour, const bool &is_reversed) const {
 
   // Check empty
   if (contour.empty()) return {};
@@ -575,27 +689,105 @@ ToolpathGenerator::computeOffsets(const double &op_width,
   return computeOffsets(op_width, max_offsets_, contour);                                      
 }
 
+// std::vector<ToolpathGenerator::ToolPolyline>
+// ToolpathGenerator::computeOffsets(const double &op_width,
+//                                   const int &max_offsets,
+//                                   const ToolPolyline &contour) const {
+//   // return results
+//   std::vector<ToolPolyline> offset_polygons;
+  
+//   // first add contour into result
+//   offset_polygons.push_back(contour);
+
+//   // Check max offsets
+//   if (max_offsets <= 1)
+//     return offset_polygons;
+
+//   int offsets_counter = 1;
+
+//   // Convert contour to Clipper2 PathD.
+//   Clipper2Lib::PathD polygon;
+//   for (const auto &pt : contour) {
+//     polygon.push_back({pt.x, pt.y});
+//   }
+
+//   // Vector to store all the offset polygons (including the initial polygon).
+//   std::vector<Clipper2Lib::PathD> allPolygons;
+//   allPolygons.push_back(polygon);
+
+//   while (true) {
+//     // Use the last polygon generated.
+//     const Clipper2Lib::Path64 &currentPolygon =
+//         convertPathDtoPath64(allPolygons.back(), scale_);
+
+//     Clipper2Lib::ClipperOffset offsetter;
+//     offsetter.AddPath(currentPolygon, Clipper2Lib::JoinType::Round,
+//                       Clipper2Lib::EndType::Polygon);
+
+//     Clipper2Lib::Paths64 offsetPaths;
+//     offsetter.Execute(op_width, offsetPaths);
+
+//     // Stop if no further offset polygon is produced.
+//     if (offsetPaths.empty())
+//       break;
+
+//     // For efficiency, use the first resulting polygon.
+//     Clipper2Lib::Path64 offsetPolygon = offsetPaths[0];
+
+//     // Break if the offset polygon is too small or degenerate.
+//     if (offsetPolygon.empty())
+//       break;
+
+//     allPolygons.push_back(convertPath64toPathD(offsetPolygon, scale_));
+
+//     // Append the offset polygon.
+//     ToolPolyline offsetPolyline;
+//     for (const auto &p : allPolygons.back()) {
+//       offsetPolyline.push_back(ToolPoint{p.x, p.y});
+//     }
+
+//     // Ensure each offset polygon is closed.
+//     offsetPolyline.push_back(offsetPolyline.front());
+
+//     // Add into offset_polygons.
+//     offset_polygons.push_back(offsetPolyline);
+
+//     // Check max offsets
+//     offsets_counter ++;
+//     if (offsets_counter >= max_offsets)
+//       break;
+//   }
+
+//   return offset_polygons;
+// }
+
 std::vector<ToolpathGenerator::ToolPolyline>
 ToolpathGenerator::computeOffsets(const double &op_width,
                                   const int &max_offsets,
                                   const ToolPolyline &contour) const {
-  // return results
-  std::vector<ToolPolyline> offset_polygons;
   
-  // first add contour into result
-  offset_polygons.push_back(contour);
+  // pre-process
+  ToolPolyline newContour;
+  newContour = resampleContour(contour, contour_resample_step_);
+  newContour = generateContour(spiral_entry_point_, newContour, spiral_reversed_);
+  
+  // define return results
+  std::vector<ToolPolyline> offset_polygons;
+
+  // Convert contour to Clipper2 PathD.
+  Clipper2Lib::PathD polygon;
+  for (const auto &pt : newContour) {
+    polygon.push_back({pt.x, pt.y});
+  }
+  
+  // add contour as 1st offset
+  offset_polygons.push_back(newContour);
 
   // Check max offsets
   if (max_offsets <= 1)
     return offset_polygons;
 
   int offsets_counter = 1;
-
-  // Convert contour to Clipper2 PathD.
-  Clipper2Lib::PathD polygon;
-  for (const auto &pt : contour) {
-    polygon.push_back({pt.x, pt.y});
-  }
 
   // Vector to store all the offset polygons (including the initial polygon).
   std::vector<Clipper2Lib::PathD> allPolygons;
@@ -635,6 +827,21 @@ ToolpathGenerator::computeOffsets(const double &op_width,
     // Ensure each offset polygon is closed.
     offsetPolyline.push_back(offsetPolyline.front());
 
+    //===================================
+    // 1. use downsampleContour
+    // double step = 2.5; // meter
+    // offsetPolyline = downsampleContour(offsetPolyline, step);
+    //===================================
+    // 2. use resampleContour
+    // double step = 2.5; // meter
+    // offsetPolyline = resampleContour(offsetPolyline, step);
+    // offsetPolyline = generateContour(ToolPoint{0.0, 0.0}, offsetPolyline, false);
+    //===================================
+    // 3. use resampleContour
+    offsetPolyline = resampleContour(offsetPolyline, contour_resample_step_);
+    offsetPolyline = generateContour(spiral_entry_point_, offsetPolyline, spiral_reversed_);
+    //===================================
+
     // Add into offset_polygons.
     offset_polygons.push_back(offsetPolyline);
 
@@ -646,6 +853,7 @@ ToolpathGenerator::computeOffsets(const double &op_width,
 
   return offset_polygons;
 }
+
 
 // --------------------- Public API Methods ---------------------
 void ToolpathGenerator::archimedeanSpiral() {

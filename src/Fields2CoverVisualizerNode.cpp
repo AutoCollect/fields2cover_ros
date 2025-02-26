@@ -181,7 +181,8 @@ namespace fields2cover_ros {
     // set spiral offset
     tp_gen_->setOperationWidth(config.op_width);
     tp_gen_->setMaxOffsets    (config.spiral_offset);
-    // tp_gen_->setSpiralReversed(config.spiral_reversed);
+    tp_gen_->setContourResampleStep(config.resample_step);
+    tp_gen_->setSpiralReversed(config.spiral_reversed);
 
     publish_topics();
   }
@@ -411,9 +412,7 @@ namespace fields2cover_ros {
       //============================================
       // 3. resampling + relocate
       tp_gen_->setPolygonName(name);
-      // tp_gen_->setContourResampleStep(2.5); // meter
-      // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
-      // tp_gen_->setSpiralReversed(is_reversed);
+      tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
       tp_gen_->setContour(polygon);
       //============================================
       try {

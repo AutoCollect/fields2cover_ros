@@ -59,16 +59,45 @@ class ToolpathGenerator {
   /// Set the max offsets threshold
   void setMaxOffsets(const int &max_offsets);
 
+  /// Set the spiral entry point.
+  void setSpiralEntryPoint(const ToolPoint &spiral_entry_point);
+
+  /// Set contour resample step.
+  void setContourResampleStep(const double &resample_step);
+
   /// Set bool flag for spiral contour clock-wise or anti-clockwise
   void setSpiralReversed(const bool &spiral_reversed);
+
+  /**
+   * @brief Resamples a polygon contour to achieve uniform spacing between points.
+   *
+   * This function generates a new polygon contour such that the distance between 
+   * consecutive points does not exceed a specified maximum spacing (sampleDistance). 
+   * If the gap between two original vertices is larger than sampleDistance, intermediate 
+   * points are added using linear interpolation. If an interpolated point lies within a 
+   * given tolerance of an original vertex, that vertex is used instead to preserve sharp features.
+   *
+   * @param contour The original polygon contour.
+   * @param sampleDistance The desired maximum distance between consecutive points.
+   * @param closeContour If true, the output polygon will be closed by connecting the last point back to the first.
+   * @param tolerance Optional tolerance used to decide if an interpolated point is close enough to an original vertex 
+   *                  (default: std::numeric_limits<double>::epsilon() * 100).
+   * @return ToolpathGenerator::ToolPolyline The uniformly resampled polygon contour.
+   */
+  /// resample contour
+  ToolPolyline resampleContour(
+    const ToolPolyline &contour, 
+    const double sampleDistance, 
+    bool closeContour = false,
+    double tolerance = std::numeric_limits<double>::epsilon() * 100) const;
 
   /// given an point, re-generate/re-arrange contour, so that:
   /// 1. the first point of contour is the closest point to given point
   /// 2. think about clockwise and anti-clockwise case
-  ToolPolyline generateContour(const ToolPoint &point, const ToolPolyline &contour);
+  ToolPolyline generateContour(const ToolPoint &point, const ToolPolyline &contour) const;
 
   ToolPolyline generateContour(const ToolPoint &point, const ToolPolyline &contour, 
-                               const bool &is_reversed);
+                               const bool &is_reversed) const;
 
   /// Generate the toolpath using the Archimedean spiral method.
   void archimedeanSpiral();
@@ -151,8 +180,10 @@ class ToolpathGenerator {
   
   double op_width_;                   // operation width
   int max_offsets_;                   // max offsets number threshold.
-
+  ToolPoint spiral_entry_point_;      // spiral entry point
+  double contour_resample_step_;      // contour resample step
   bool spiral_reversed_;              // spiral contour clock-wise or anti-clockwise flag
+  
   int smooth_number_;
   bool smooth_boundary_;
 
