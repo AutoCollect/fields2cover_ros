@@ -337,9 +337,9 @@ namespace fields2cover_ros {
     first_point_marker.scale.y = 3.0;
     first_point_marker.scale.z = 3.0;
     // Set blue color: (R=0, G=0, B=1, A=1)
-    first_point_marker.color.r = 0.0;
+    first_point_marker.color.r = 1.0;
     first_point_marker.color.g = 0.0;
-    first_point_marker.color.b = 1.0;
+    first_point_marker.color.b = 0.0;
     first_point_marker.color.a = 1.0;
     if (!marker_swaths.points.empty()) {
       first_point_marker.pose.position.x = marker_swaths.points.front().x;

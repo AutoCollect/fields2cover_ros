@@ -540,9 +540,9 @@ void ToolpathGenerator::plotPath() const {
   last_point_marker.scale.y = 3.0;
   last_point_marker.scale.z = 3.0;
   // Set red color: (R=1, G=0, B=0, A=1)
-  last_point_marker.color.r = 1.0;
+  last_point_marker.color.r = 0.0;
   last_point_marker.color.g = 0.0;
-  last_point_marker.color.b = 0.0;
+  last_point_marker.color.b = 1.0;
   last_point_marker.color.a = 1.0;
   if (!inward_spiral_path_.empty()) {
     last_point_marker.pose.position.x = inward_spiral_path_.back().x;
