@@ -21,13 +21,14 @@ double distance(const ToolpathGenerator::ToolPoint &a,
 // --------------------- Constructor & Setters ---------------------
 ToolpathGenerator::ToolpathGenerator(int smooth_number, double op_width,
                                      bool smooth_boundary)
-    : smooth_number_(smooth_number),
+    : contour_offset_(0.0),
       op_width_(op_width),
-      smooth_boundary_(smooth_boundary),
       entry_d_0_(0.0),
       max_offsets_(1),
       spiral_reversed_(false),
-      poly_name_("Toolpath") {
+      poly_name_("Toolpath"),
+      smooth_number_(smooth_number),
+      smooth_boundary_(smooth_boundary) {
   offset_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("/offset_polygon", 10, true);
   path_pub_   = nh_.advertise<visualization_msgs::MarkerArray>("/spiral_path",    10, true);
 }
@@ -41,10 +42,21 @@ void ToolpathGenerator::setContour(const ToolPolyline &contour) {
   if (contour_.empty()) {
     throw std::runtime_error("Contour is empty.");
   }
+
   // Ensure the contour is closed.
   if (distance(contour_.front(), contour_.back()) > 1e-6) {
     contour_.push_back(contour_.front());
   }
+
+  if (contour_offset_ > 0) {
+    // compute the headland offset contour 
+    const double delta = contour_offset_ * scale_;
+    contour_ = computeOffsets(delta, 2, contour_).back();
+  }
+}
+
+void ToolpathGenerator::setContourOffset(const double &contour_offset) {
+  contour_offset_ = contour_offset;
 }
 
 void ToolpathGenerator::setPolygonName(const std::string &name) {
@@ -214,7 +226,7 @@ ToolpathGenerator::ToolPolyline ToolpathGenerator::generateContour(
     std::reverse(poly.begin() + 1, poly.end());
   }
 
-  ROS_ERROR("poly front: %f, %f", poly.front().x, poly.front().y);
+  // ROS_ERROR("poly front: %f, %f", poly.front().x, poly.front().y);
   return poly;
 }
 
@@ -462,8 +474,9 @@ void ToolpathGenerator::plotPath() const {
   contour_marker.pose.orientation.w = 1.0;
   contour_marker.scale.x = 0.5;  // Line width
   // Set cyan color: (R=0, G=1, B=1, A=1)
-  contour_marker.color.r = 0.0;
-  contour_marker.color.g = 1.0;
+  // light purple (R=0.8, G=0.6, B=1.0, A=1.0)
+  contour_marker.color.r = 0.8;
+  contour_marker.color.g = 0.6;
   contour_marker.color.b = 1.0;
   contour_marker.color.a = 1.0;
 

@@ -53,6 +53,9 @@ class ToolpathGenerator {
   /// Set the outer contour (must be a closed polyline).
   void setContour(const ToolPolyline &contour);
 
+  /// Set the contour offset
+  void setContourOffset(const double &contour_offset);
+
   /// Set the polygon name.
   void setPolygonName(const std::string &name);
 
@@ -178,6 +181,7 @@ class ToolpathGenerator {
 
   // --------------------- Spiral Path Params ---------------------
   
+  double contour_offset_;             // spiral contour offset relative to upath contour
   double op_width_;                   // operation width
   int max_offsets_;                   // max offsets number threshold.
   ToolPoint spiral_entry_point_;      // spiral entry point

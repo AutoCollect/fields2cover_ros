@@ -182,6 +182,7 @@ namespace fields2cover_ros {
     m_spiral_path_    = config.spiral_path;
 
     // set spiral offset
+    tp_gen_->setContourOffset (config.spiral_headland_offset);
     tp_gen_->setOperationWidth(config.op_width);
     tp_gen_->setMaxOffsets    (config.spiral_offset);
     tp_gen_->setContourResampleStep(config.resample_step);
