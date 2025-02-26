@@ -362,7 +362,7 @@ void ToolpathGenerator::plotPath() const {
     contour_marker.points.push_back(p);
   }
 
-  // --- Create a marker for the entry_spiral_ (green line strip) ---
+  // --- Create a marker for the inward_spiral_path_ (green line strip) ---
   visualization_msgs::Marker spiral_marker;
   spiral_marker.header.frame_id = "map";
   spiral_marker.header.stamp = ros::Time::now();
@@ -378,8 +378,8 @@ void ToolpathGenerator::plotPath() const {
   spiral_marker.color.b = 1.0;
   spiral_marker.color.a = 1.0;
 
-  // Populate the marker with points from entry_spiral_
-  for (const auto &pt : entry_spiral_) {
+  // Populate the marker with points from inward_spiral_path_
+  for (const auto &pt : inward_spiral_path_) {
     geometry_msgs::Point p;
     p.x = pt.x;
     p.y = pt.y;
@@ -387,11 +387,11 @@ void ToolpathGenerator::plotPath() const {
     spiral_marker.points.push_back(p);
   }
 
-  // --- Create a marker for the first point of entry_spiral_ (blue big point) ---
+  // --- Create a marker for the first point of inward_spiral_path_ (blue big point) ---
   visualization_msgs::Marker first_point_marker;
   first_point_marker.header.frame_id = "map";
   first_point_marker.header.stamp = ros::Time::now();
-  first_point_marker.ns = "entry_spiral_first_point";
+  first_point_marker.ns = "inward_spiral_path_first_point";
   first_point_marker.id = 2;
   first_point_marker.type = visualization_msgs::Marker::SPHERE;
   first_point_marker.action = visualization_msgs::Marker::ADD;
@@ -405,17 +405,17 @@ void ToolpathGenerator::plotPath() const {
   first_point_marker.color.g = 0.0;
   first_point_marker.color.b = 1.0;
   first_point_marker.color.a = 1.0;
-  if (!entry_spiral_.empty()) {
-    first_point_marker.pose.position.x = entry_spiral_.front().x;
-    first_point_marker.pose.position.y = entry_spiral_.front().y;
+  if (!inward_spiral_path_.empty()) {
+    first_point_marker.pose.position.x = inward_spiral_path_.front().x;
+    first_point_marker.pose.position.y = inward_spiral_path_.front().y;
     first_point_marker.pose.position.z = 0.0;
   }
 
-  // --- Create a marker for the last point of entry_spiral_ (red big point) ---
+  // --- Create a marker for the last point of inward_spiral_path_ (red big point) ---
   visualization_msgs::Marker last_point_marker;
   last_point_marker.header.frame_id = "map";
   last_point_marker.header.stamp = ros::Time::now();
-  last_point_marker.ns = "entry_spiral_last_point";
+  last_point_marker.ns = "inward_spiral_path_last_point";
   last_point_marker.id = 3;
   // last_point_marker.type = visualization_msgs::Marker::SPHERE;
   last_point_marker.type = visualization_msgs::Marker::CUBE;
@@ -430,9 +430,9 @@ void ToolpathGenerator::plotPath() const {
   last_point_marker.color.g = 0.0;
   last_point_marker.color.b = 0.0;
   last_point_marker.color.a = 1.0;
-  if (!entry_spiral_.empty()) {
-    last_point_marker.pose.position.x = entry_spiral_.back().x;
-    last_point_marker.pose.position.y = entry_spiral_.back().y;
+  if (!inward_spiral_path_.empty()) {
+    last_point_marker.pose.position.x = inward_spiral_path_.back().x;
+    last_point_marker.pose.position.y = inward_spiral_path_.back().y;
     last_point_marker.pose.position.z = 0.0;
   }
 
@@ -660,7 +660,7 @@ void ToolpathGenerator::archimedeanSpiral() {
   offsets_ = computeOffsets(-delta, contour_);
   std::cout << "Number of computed offsets: " << offsets_.size() << "\n";
 
-  entry_spiral_.clear();
+  inward_spiral_path_.clear();
   for (size_t i = 0; i < offsets_.size(); ++i) {
     const ToolPolyline &off = offsets_[i];
     double next_param = computeNextTurnParam(entry_d_0_, toolpath_size_, &off);
@@ -670,7 +670,7 @@ void ToolpathGenerator::archimedeanSpiral() {
     ToolPolyline segment = selectSubpolyline(off, entry_d_0_, next_param);
     std::cout << "  Adding " << segment.size()
               << " points to toolpath segment\n";
-    entry_spiral_.insert(entry_spiral_.end(), segment.begin(), segment.end());
+    inward_spiral_path_.insert(inward_spiral_path_.end(), segment.begin(), segment.end());
     ToolPoint current_pt = getPointFromOffset(entry_d_0_, off);
     if (i != offsets_.size() - 1) {
       double new_d0 = findNearestParam(current_pt, off);
@@ -680,10 +680,10 @@ void ToolpathGenerator::archimedeanSpiral() {
     }
   }
 
-  if (!entry_spiral_.empty() &&
-      std::fabs(entry_spiral_.back().x) < 1e-5 &&
-      std::fabs(entry_spiral_.back().y) < 1e-5) {
-    entry_spiral_.pop_back();
+  if (!inward_spiral_path_.empty() &&
+      std::fabs(inward_spiral_path_.back().x) < 1e-5 &&
+      std::fabs(inward_spiral_path_.back().y) < 1e-5) {
+    inward_spiral_path_.pop_back();
   }
 
   std::cout << "archimedeanSpiral completed.\n";
@@ -710,16 +710,16 @@ void ToolpathGenerator::archimedeanSpiralTrick() {
     if (entry_cutting_d > new_d0)
       entry_cutting_d = new_d0;
     ToolPolyline path_segment = selectSubpolyline(entry_half, 0.0, entry_cutting_d);
-    entry_spiral_.insert(entry_spiral_.end(), path_segment.begin(),
+    inward_spiral_path_.insert(inward_spiral_path_.end(), path_segment.begin(),
                          path_segment.end());
-    entry_spiral_.push_back(entry_p1);
+    inward_spiral_path_.push_back(entry_p1);
     entry_d_0_ = entry_d1;
   }
   double final_d1 =
       computeNextTurnParam(entry_d_0_, toolpath_size_, &offsets_.back());
   ToolPolyline final_segment = selectSubpolyline(offsets_.back(), entry_d_0_,
                                                   final_d1);
-  entry_spiral_.insert(entry_spiral_.end(), final_segment.begin(),
+  inward_spiral_path_.insert(inward_spiral_path_.end(), final_segment.begin(),
                        final_segment.end());
   std::cout << "archimedeanSpiralTrick completed.\n";
 }
@@ -740,7 +740,7 @@ void ToolpathGenerator::archimedeanSpiralSmooth() {
       next_half.push_back(getPointFromOffset(d, offsets_[i + 1]));
     }
     blendPoints(current_half, next_half);
-    entry_spiral_.insert(entry_spiral_.end(), current_half.begin(),
+    inward_spiral_path_.insert(inward_spiral_path_.end(), current_half.begin(),
                          current_half.end());
     ToolPoint entry_p0 = getPointFromOffset(entry_d_0_, offsets_[i]);
     entry_d_0_ = findNearestParam(entry_p0, offsets_[i + 1]);
@@ -821,7 +821,7 @@ void ToolpathGenerator::polygonSmoothing() {
 
 void ToolpathGenerator::printPath() const {
   std::cout << "Toolpath Coordinates (" << poly_name_ << "):\n";
-  for (const auto &pt : entry_spiral_) {
+  for (const auto &pt : inward_spiral_path_) {
     std::cout << "(" << pt.x << ", " << pt.y << ")\n";
   }
 }

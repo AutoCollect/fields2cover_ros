@@ -99,7 +99,7 @@ class ToolpathGenerator {
 
   void plotPath() const;
 
-  ToolPolyline getEntrySpiral() const { return entry_spiral_; }
+  ToolPolyline getEntrySpiral() const { return inward_spiral_path_; }
 
   std::vector<ToolPolyline> getOffsets() const { return offsets_; }
 
@@ -137,9 +137,9 @@ class ToolpathGenerator {
   }
 
  private:
-  const double scale_ = 1000.0;  // Path64 scale factor
+  const double scale_ = 1000.0;       // Path64 scale factor
 
-  ToolPolyline entry_spiral_;         // final toolpath.
+  ToolPolyline inward_spiral_path_;   // final inward spiral toolpath.
   double entry_d_0_;                  // Current parameter along the polyline.
   std::vector<ToolPolyline> offsets_; // Computed inward offset polylines.
   int max_offsets_;                   // max offsets threshold.
