@@ -73,6 +73,8 @@ namespace fields2cover_ros {
       ros::Publisher field_2d_border_publisher_;         ///< Publisher for 2D field border from GPS with 0 elevation
       ros::Publisher field_no_headlands_publisher_;      ///< Publisher for fields inner headlands.
       ros::Publisher field_swaths_publisher_;            ///< Publisher for field swaths (U turn part).
+
+      ros::Publisher merge_path_publisher;               ///< polyline connection btween spiral path and upath
       // fixed pattern upath trajectory result
       ros::Publisher fixed_pattern_plan_pose_array_pub_; ///< Publisher for fixed pattern plan poses.
       // 2d occupancy grid map
@@ -102,8 +104,10 @@ namespace fields2cover_ros {
       F2CRobot robot_{2.1, 2.5};     ///< Robot configuration.
       double m_swath_angle_;         ///< config.swath_angle
       double m_headland_width_;      ///< config.headland_width
-
+      // u path reverse flag
+      bool reverse_u_path_  {false}; ///< config.reverse_path
       bool automatic_angle_ {false}; ///< Flag for automatic angle calculation.
+
       int  sg_objective_   {0};      ///< Objective for the SG algorithm.
       int  opt_turn_type_  {0};      ///< Type of turn optimization.
       int  opt_route_type_ {0};      ///< Type of route optimization.
@@ -118,9 +122,6 @@ namespace fields2cover_ros {
       // filed file path
       std::string field_file_path_;  ///< Path to the field file.
       int path_file_seq_ = 0;        ///< Sequence number for path files.
-
-      // path reverse flag
-      bool reverse_u_path_ {false};    ///< Flag to reverse the path.
 
       // U path waypoints interpolation gap
       double interp_step_ = 0.01;    ///< Interpolation step for U path waypoints.
@@ -137,7 +138,13 @@ namespace fields2cover_ros {
       /// spiral path
       ToolpathGenerator* tp_gen_;    ///< spiral path generator
 
-      bool m_spiral_path_ = {false}; ///< flag to spiral path generation
+      bool m_spiral_path_ {false};   ///< flag to spiral path generation
+
+      //===================================================
+      // Other Param
+      //===================================================
+      /// flag for path merge
+      bool  merge_path_ {false};     ///< flag for polyline connection btween spiral path and upath
 
       /**
        * @brief generate single inward spiral given a 2d contour

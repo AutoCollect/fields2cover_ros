@@ -169,6 +169,7 @@ namespace fields2cover_ros {
       robot_.setMaxCurv(1.0 / config.turn_radius);
     }
 
+    //========================================================
     // upath params
     m_swath_angle_    = config.swath_angle;
     m_headland_width_ = config.headland_width;
@@ -178,6 +179,7 @@ namespace fields2cover_ros {
     opt_route_type_   = config.route_type;
     reverse_u_path_   = config.reverse_path;
 
+    //========================================================
     // spiral params
     m_spiral_path_    = config.spiral_path;
 
@@ -193,6 +195,10 @@ namespace fields2cover_ros {
     double y = latest_odom_.pose.pose.position.y;
     tp_gen_->setSpiralEntryPoint(ToolPoint{x, y});
     // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
+
+    //========================================================
+    // flag for polyline connection btween spiral path and upath
+    merge_path_ = config.merge_path;
 
     publish_topics();
   }
