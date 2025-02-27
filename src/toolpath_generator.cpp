@@ -22,6 +22,7 @@ double distance(const ToolpathGenerator::ToolPoint &a,
 ToolpathGenerator::ToolpathGenerator(int smooth_number, double op_width,
                                      bool smooth_boundary)
     : contour_offset_(0.0),
+      reference_offset_(0.0),
       op_width_(op_width),
       entry_d_0_(0.0),
       max_offsets_(1),
@@ -53,6 +54,11 @@ void ToolpathGenerator::setContour(const ToolPolyline &contour) {
     const double delta = contour_offset_ * scale_;
     contour_ = computeOffsets(delta, 2, contour_).back();
   }
+
+  // if (reference_offset_ > 0) {
+  //   const double delta = (contour_offset_ + reference_offset_) * scale_;
+  //   reference_ = computeOffsets(-delta, 2, contour_).back();
+  // }
 }
 
 void ToolpathGenerator::setContourOffset(const double &contour_offset) {
@@ -78,6 +84,11 @@ void ToolpathGenerator::setContourResampleStep(const double &resample_step) {
 void ToolpathGenerator::setSpiralReversed(const bool &spiral_reversed) {
   spiral_reversed_ = spiral_reversed;
 }
+
+void ToolpathGenerator::setReferenceOffset(const double& reference_offset) {
+  reference_offset_ = reference_offset;
+}
+
 
 // --------------------- Helper Functions ---------------------
 /**
@@ -563,11 +574,36 @@ void ToolpathGenerator::plotPath() const {
     last_point_marker.pose.position.z = 0.0;
   }
 
+  // --- Create a marker for the reference_contour (red) ---
+  visualization_msgs::Marker reference_marker;
+  reference_marker.header.frame_id = "map";  // Change to your fixed frame if needed.
+  reference_marker.header.stamp = ros::Time::now();
+  reference_marker.ns = "reference";
+  reference_marker.id = 4;
+  reference_marker.type = visualization_msgs::Marker::LINE_STRIP;
+  reference_marker.action = visualization_msgs::Marker::ADD;
+  reference_marker.pose.orientation.w = 1.0;
+  reference_marker.scale.x = 0.5;  // Line width
+  reference_marker.color.r = 1.0;
+  reference_marker.color.g = 0.0;
+  reference_marker.color.b = 0.0;
+  reference_marker.color.a = 1.0;
+
+  // Populate the marker with points from contour_
+  for (const auto &pt : reference_) {
+    geometry_msgs::Point p;
+    p.x = pt.x;
+    p.y = pt.y;
+    p.z = 0.0;  // Assuming a 2D path in the XY-plane.
+    reference_marker.points.push_back(p);
+  }
+
   // Add all markers to the MarkerArray.
   marker_array.markers.push_back(contour_marker);
   marker_array.markers.push_back(spiral_marker);
   marker_array.markers.push_back(first_point_marker);
   marker_array.markers.push_back(last_point_marker);
+  marker_array.markers.push_back(reference_marker);
 
   // Publish the marker array.
   path_pub_.publish(marker_array);

@@ -159,9 +159,7 @@ namespace fields2cover_ros {
     polygon_st2.polygon.points.clear();
     //========================================================
     // merge upath and spiral path and publish
-    if (m_spiral_path_ && merge_path_) {
-      mergePaths(upath);
-    }
+    // mergePaths(upath);
     //========================================================
     // interpolation with waypoints
     // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
@@ -185,7 +183,7 @@ namespace fields2cover_ros {
     sg_objective_     = config.sg_objective;
     opt_turn_type_    = config.turn_type;
     opt_route_type_   = config.route_type;
-    reverse_u_path_   = config.reverse_path;
+    reverse_u_path_   = config.upath_reversed;
 
     //========================================================
     // spiral params
@@ -197,7 +195,7 @@ namespace fields2cover_ros {
     tp_gen_->setMaxOffsets    (config.spiral_offset);
     tp_gen_->setContourResampleStep(config.resample_step);
     tp_gen_->setSpiralReversed(config.spiral_reversed);
-
+    tp_gen_->setReferenceOffset(config.reference_offset);
     // Use the cached odometry data to set the spiral entry point
     double x = latest_odom_.pose.pose.position.x;
     double y = latest_odom_.pose.pose.position.y;
@@ -456,39 +454,49 @@ namespace fields2cover_ros {
   // TODO
   void VisualizerNode::mergePaths(const F2CPath& upath) {
 
-    // create a merge marker
-    visualization_msgs::Marker merge_paths_marker;
-    merge_paths_marker.header.frame_id = frame_id_; // Change to your frame
-    merge_paths_marker.header.stamp = ros::Time::now();
-    merge_paths_marker.ns = "merge_marker";
-    merge_paths_marker.action = visualization_msgs::Marker::ADD;
-    merge_paths_marker.type = visualization_msgs::Marker::LINE_STRIP;
-    merge_paths_marker.pose.orientation.w = 1.0;
-    merge_paths_marker.id = 0;
+    if (m_spiral_path_ && merge_path_) {
+      // create a merge marker
+      visualization_msgs::Marker merge_paths_marker;
+      merge_paths_marker.header.frame_id = frame_id_; // Change to your frame
+      merge_paths_marker.header.stamp = ros::Time::now();
+      merge_paths_marker.ns = "merge_marker";
+      merge_paths_marker.action = visualization_msgs::Marker::ADD;
+      merge_paths_marker.type = visualization_msgs::Marker::LINE_STRIP;
+      merge_paths_marker.pose.orientation.w = 1.0;
+      merge_paths_marker.id = 0;
 
-    // Set the line width
-    merge_paths_marker.scale.x = 0.5; // Line width
+      // Set the line width
+      merge_paths_marker.scale.x = 0.5; // Line width
 
-    // Set the line color (RGB light purple + alpha)
-    merge_paths_marker.color.r = 0.7;
-    merge_paths_marker.color.g = 0.5;
-    merge_paths_marker.color.b = 0.8;
-    merge_paths_marker.color.a = 1.0;
-    
-    // Add points to the marker
-    ToolPoint pt = tp_gen_->getEntrySpiral().back();
-    geometry_msgs::Point start;
-    start.x = pt.x;
-    start.y = pt.y;
-    merge_paths_marker.points.push_back(start);
+      // Set the line color (RGB light purple + alpha)
+      merge_paths_marker.color.r = 0.7;
+      merge_paths_marker.color.g = 0.5;
+      merge_paths_marker.color.b = 0.8;
+      merge_paths_marker.color.a = 1.0;
+      
+      // Add points to the marker
+      ToolPoint pt = tp_gen_->getEntrySpiral().back();
+      geometry_msgs::Point start;
+      start.x = pt.x;
+      start.y = pt.y;
+      merge_paths_marker.points.push_back(start);
 
-    geometry_msgs::Point end;
-    end.x = upath.getStates()[0].point.getX();
-    end.y = upath.getStates()[0].point.getY();
-    merge_paths_marker.points.push_back(end);
+      geometry_msgs::Point end;
+      end.x = upath.getStates()[0].point.getX();
+      end.y = upath.getStates()[0].point.getY();
+      merge_paths_marker.points.push_back(end);
 
-    // publish merge marker
-    merge_paths_publisher_.publish(merge_paths_marker);
+      // publish merge marker
+      merge_paths_publisher_.publish(merge_paths_marker);
+    }
+    else {
+      // visualization_msgs::Marker marker;
+      // marker.action = visualization_msgs::Marker::DELETEALL;
+      // marker.ns = BLOCKED_NS;
+      // marker_array.markers.push_back(marker);
+      // marker.ns = SOLUTION_NS;
+      // merge_paths_publisher_.publish(marker);
+    }
   }
 
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const F2CPath& path) {

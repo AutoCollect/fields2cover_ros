@@ -71,6 +71,9 @@ class ToolpathGenerator {
   /// Set bool flag for spiral contour clock-wise or anti-clockwise
   void setSpiralReversed(const bool &spiral_reversed);
 
+  /// Set reference offset
+  void setReferenceOffset(const double& reference_offset);
+
   /**
    * @brief Resamples a polygon contour to achieve uniform spacing between points.
    *
@@ -196,6 +199,9 @@ class ToolpathGenerator {
   ToolPolyline inward_spiral_path_;   // final inward spiral toolpath.
   std::vector<ToolPolyline> offsets_; // Computed inward offset polylines.
   double entry_d_0_;                  // Current parameter along the polyline.
+
+  ToolPolyline reference_;            // reference contour relative the last inner spiral ring.
+  double reference_offset_;           // reference offset value, relative to last inner spiral ring
 
   // --------------------- ROS Publisher ---------------------
 
