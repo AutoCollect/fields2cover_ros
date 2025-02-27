@@ -814,12 +814,12 @@ std::vector<ToolpathGenerator::ToolPolyline>
 ToolpathGenerator::computeOffsets(const double &op_width,
                                   const int &max_offsets,
                                   const ToolPolyline &contour) const {
-  
+
   // pre-process
   ToolPolyline newContour;
   newContour = resampleContour(contour, contour_resample_step_);
   newContour = generateContour(spiral_entry_point_, newContour, spiral_reversed_);
-  
+
   // define return results
   std::vector<ToolPolyline> offset_polygons;
 
@@ -828,7 +828,7 @@ ToolpathGenerator::computeOffsets(const double &op_width,
   for (const auto &pt : newContour) {
     polygon.push_back({pt.x, pt.y});
   }
-  
+
   // add contour as 1st offset
   offset_polygons.push_back(newContour);
 
