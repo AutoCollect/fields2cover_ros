@@ -74,7 +74,7 @@ namespace fields2cover_ros {
       ros::Publisher field_no_headlands_publisher_;      ///< Publisher for fields inner headlands.
       ros::Publisher field_swaths_publisher_;            ///< Publisher for field swaths (U turn part).
 
-      ros::Publisher merge_path_publisher;               ///< polyline connection btween spiral path and upath
+      ros::Publisher merge_paths_publisher_;             ///< polyline connection btween spiral path and upath
       // fixed pattern upath trajectory result
       ros::Publisher fixed_pattern_plan_pose_array_pub_; ///< Publisher for fixed pattern plan poses.
       // 2d occupancy grid map
@@ -160,11 +160,15 @@ namespace fields2cover_ros {
       F2CPath generateSwaths(F2CCell no_headlands);
 
       /**
+       * @brief merge spiral path and u path
+       */
+       void mergePaths(const F2CPath& upath);
+
+      /**
        * @brief interpolate waypoints
        * @param path F2CPath.
        * @return waypoints.
        */
-
       std::vector<geometry_msgs::PoseStamped> interpolateWaypoints(const F2CPath& path);
 
       /**
@@ -187,7 +191,7 @@ namespace fields2cover_ros {
        * @param path Path to transform.
        * @param marker Marker to store transformed points.
        */
-      void transformPoints(const geometry_msgs::PoseStamped& poseTransform, const F2CPath& path, visualization_msgs::Marker& marker);
+      void transformPoints(const geometry_msgs::PoseStamped& poseTransform, F2CPath& path, visualization_msgs::Marker& marker);
 
       /**
        * @brief Transform a vector of poses.

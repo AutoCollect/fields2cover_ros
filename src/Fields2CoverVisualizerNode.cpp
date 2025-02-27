@@ -45,6 +45,9 @@ namespace fields2cover_ros {
     field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>  ("/field/no_headlands", 10, true);
     field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::MarkerArray>("/field/swaths",       10, true);
 
+    // publisher merge paths connection
+    merge_paths_publisher_        = public_node_handle_.advertise<visualization_msgs::Marker>     ("/field/merge_path",   10, true);
+
     // Publisher for PoseArray
     fixed_pattern_plan_pose_array_pub_ = public_node_handle_.advertise<geometry_msgs::PoseArray>("/waypoints", 10, true);
 
@@ -147,13 +150,18 @@ namespace fields2cover_ros {
     field_no_headlands_publisher_.publish(polygon_st2);
     //========================================================
     // u-turn swaths generation
-    F2CPath path = generateSwaths(no_headlands);
+    F2CPath upath = generateSwaths(no_headlands);
     //========================================================
     // single inward spiral trajectory generation & publish
     generateSingleInwardSpiral(polygon_st2);
     //----------------------------------------------------------
     // clear no_headlands
     polygon_st2.polygon.points.clear();
+    //========================================================
+    // merge upath and spiral path and publish
+    if (m_spiral_path_ && merge_path_) {
+      mergePaths(upath);
+    }
     //========================================================
     // interpolation with waypoints
     // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
@@ -443,6 +451,44 @@ namespace fields2cover_ros {
           std::cerr << "Error in processing polygon " << name << ": " << e.what() << "\n";
       }
     }
+  }
+
+  // TODO
+  void VisualizerNode::mergePaths(const F2CPath& upath) {
+
+    // create a merge marker
+    visualization_msgs::Marker merge_paths_marker;
+    merge_paths_marker.header.frame_id = frame_id_; // Change to your frame
+    merge_paths_marker.header.stamp = ros::Time::now();
+    merge_paths_marker.ns = "merge_marker";
+    merge_paths_marker.action = visualization_msgs::Marker::ADD;
+    merge_paths_marker.type = visualization_msgs::Marker::LINE_STRIP;
+    merge_paths_marker.pose.orientation.w = 1.0;
+    merge_paths_marker.id = 0;
+
+    // Set the line width
+    merge_paths_marker.scale.x = 0.5; // Line width
+
+    // Set the line color (RGB light purple + alpha)
+    merge_paths_marker.color.r = 0.7;
+    merge_paths_marker.color.g = 0.5;
+    merge_paths_marker.color.b = 0.8;
+    merge_paths_marker.color.a = 1.0;
+    
+    // Add points to the marker
+    ToolPoint pt = tp_gen_->getEntrySpiral().back();
+    geometry_msgs::Point start;
+    start.x = pt.x;
+    start.y = pt.y;
+    merge_paths_marker.points.push_back(start);
+
+    geometry_msgs::Point end;
+    end.x = upath.getStates()[0].point.getX();
+    end.y = upath.getStates()[0].point.getY();
+    merge_paths_marker.points.push_back(end);
+
+    // publish merge marker
+    merge_paths_publisher_.publish(merge_paths_marker);
   }
 
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const F2CPath& path) {
@@ -868,7 +914,11 @@ namespace fields2cover_ros {
   }
 
   // transform Path -> Marker points coord
-  void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, const F2CPath& path, visualization_msgs::Marker& marker) {
+  void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, F2CPath& path, visualization_msgs::Marker& marker) {
+
+    // Assume `marker` is a visualization_msgs::Marker member already configured (frame_id, type, etc.)
+    marker.points.clear();
+    marker.points.reserve(path.size());  // reserve memory for efficiency
 
     tf2::Quaternion q(
       poseTransform.pose.orientation.x,
@@ -886,21 +936,30 @@ namespace fields2cover_ros {
     transform.setOrigin(t);
     transform.setRotation(q);
 
-    // Transform each point in the polygon
-    for (auto&& s : path.getStates()) {
-      geometry_msgs::Point ros_p;
-      conversor::ROS::to(s.point, ros_p);
+    // Transform each point in the path
+    for (auto &state : path.getStates()) {
+      // Original point coordinates
+      double x = state.point.getX();
+      double y = state.point.getY();
+      double z = state.point.getZ();
 
-      // Original point
-      tf2::Vector3 p_in(ros_p.x, ros_p.y, ros_p.z);
-      // Apply the transform
-      tf2::Vector3 p_out = transform * p_in;
+      // Apply the poseTransform to this 3D point (preserves X, Y, Z)
+      tf2::Vector3 input_point(x, y, z);
+      tf2::Vector3 transformed_point = transform * input_point;
 
-      ros_p.x = p_out.x();
-      ros_p.y = p_out.y();
-      // ros_p.z = p_out.z();
-      ros_p.z = 0.0;
-      marker.points.push_back(ros_p);
+      // Update the path's point with transformed coordinates
+      state.point.setX(transformed_point.x());
+      state.point.setY(transformed_point.y());
+      // state.point.setZ(transformed_point.z());
+      state.point.setZ(0.0);
+
+      // Create a ROS Point for the marker and add it to marker.points
+      geometry_msgs::Point ros_point;
+      ros_point.x = transformed_point.x();
+      ros_point.y = transformed_point.y();
+      // ros_point.z = transformed_point.z();
+      ros_point.z = 0.0;
+      marker.points.push_back(ros_point);
     }
   }
 
