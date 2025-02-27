@@ -82,7 +82,6 @@ namespace fields2cover_ros {
       sensor_msgs::NavSatFix gps_;              ///< GPS data.
       f2c::Transform transf_;                   ///< Transformation utility.
 
-
       //===================================================
       // ROS Subscriber
       //===================================================
@@ -121,7 +120,7 @@ namespace fields2cover_ros {
       int path_file_seq_ = 0;        ///< Sequence number for path files.
 
       // path reverse flag
-      bool reverse_path_ {false};    ///< Flag to reverse the path.
+      bool reverse_u_path_ {false};    ///< Flag to reverse the path.
 
       // U path waypoints interpolation gap
       double interp_step_ = 0.01;    ///< Interpolation step for U path waypoints.

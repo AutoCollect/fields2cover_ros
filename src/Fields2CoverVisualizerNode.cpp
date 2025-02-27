@@ -176,7 +176,7 @@ namespace fields2cover_ros {
     sg_objective_     = config.sg_objective;
     opt_turn_type_    = config.turn_type;
     opt_route_type_   = config.route_type;
-    reverse_path_     = config.reverse_path;
+    reverse_u_path_   = config.reverse_path;
 
     // spiral params
     m_spiral_path_    = config.spiral_path;
@@ -332,6 +332,11 @@ namespace fields2cover_ros {
     // Transform each point in the polygon
     transformPoints(gps2map_transform_, path, marker_swaths);
 
+    // check reverse Upath
+    if (reverse_u_path_) {
+      std::reverse(marker_swaths.points.begin(), marker_swaths.points.end());
+    }
+
     // --- Create a marker for the first point of upath (blue big point) ---
     visualization_msgs::Marker first_point_marker;
     first_point_marker.header.frame_id = frame_id_;
@@ -476,14 +481,14 @@ namespace fields2cover_ros {
     transformPoses(gps2map_transform_, fixed_pattern_plan);
     //----------------------------------------------------------
 
-    if (reverse_path_) {
-      ROS_ERROR("reverse path");
-      // reserve orientation
-      for (auto& wpt : fixed_pattern_plan) {
-        reverseOrientation(wpt);
-      }
-      std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
-    }
+    // if (reverse_path_) {
+    //   ROS_ERROR("reverse path");
+    //   // reserve orientation
+    //   for (auto& wpt : fixed_pattern_plan) {
+    //     reverseOrientation(wpt);
+    //   }
+    //   std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
+    // }
     
     // publish topics
     publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
