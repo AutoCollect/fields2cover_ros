@@ -54,11 +54,6 @@ void ToolpathGenerator::setContour(const ToolPolyline &contour) {
     const double delta = contour_offset_ * scale_;
     contour_ = computeOffsets(delta, 2, contour_).back();
   }
-
-  // if (reference_offset_ > 0) {
-  //   const double delta = (contour_offset_ + reference_offset_) * scale_;
-  //   reference_ = computeOffsets(-delta, 2, contour_).back();
-  // }
 }
 
 void ToolpathGenerator::setContourOffset(const double &contour_offset) {
@@ -738,77 +733,6 @@ ToolpathGenerator::computeOffsets(const double &op_width,
   return computeOffsets(op_width, max_offsets_, contour);                                      
 }
 
-// std::vector<ToolpathGenerator::ToolPolyline>
-// ToolpathGenerator::computeOffsets(const double &op_width,
-//                                   const int &max_offsets,
-//                                   const ToolPolyline &contour) const {
-//   // return results
-//   std::vector<ToolPolyline> offset_polygons;
-  
-//   // first add contour into result
-//   offset_polygons.push_back(contour);
-
-//   // Check max offsets
-//   if (max_offsets <= 1)
-//     return offset_polygons;
-
-//   int offsets_counter = 1;
-
-//   // Convert contour to Clipper2 PathD.
-//   Clipper2Lib::PathD polygon;
-//   for (const auto &pt : contour) {
-//     polygon.push_back({pt.x, pt.y});
-//   }
-
-//   // Vector to store all the offset polygons (including the initial polygon).
-//   std::vector<Clipper2Lib::PathD> allPolygons;
-//   allPolygons.push_back(polygon);
-
-//   while (true) {
-//     // Use the last polygon generated.
-//     const Clipper2Lib::Path64 &currentPolygon =
-//         convertPathDtoPath64(allPolygons.back(), scale_);
-
-//     Clipper2Lib::ClipperOffset offsetter;
-//     offsetter.AddPath(currentPolygon, Clipper2Lib::JoinType::Round,
-//                       Clipper2Lib::EndType::Polygon);
-
-//     Clipper2Lib::Paths64 offsetPaths;
-//     offsetter.Execute(op_width, offsetPaths);
-
-//     // Stop if no further offset polygon is produced.
-//     if (offsetPaths.empty())
-//       break;
-
-//     // For efficiency, use the first resulting polygon.
-//     Clipper2Lib::Path64 offsetPolygon = offsetPaths[0];
-
-//     // Break if the offset polygon is too small or degenerate.
-//     if (offsetPolygon.empty())
-//       break;
-
-//     allPolygons.push_back(convertPath64toPathD(offsetPolygon, scale_));
-
-//     // Append the offset polygon.
-//     ToolPolyline offsetPolyline;
-//     for (const auto &p : allPolygons.back()) {
-//       offsetPolyline.push_back(ToolPoint{p.x, p.y});
-//     }
-
-//     // Ensure each offset polygon is closed.
-//     offsetPolyline.push_back(offsetPolyline.front());
-
-//     // Add into offset_polygons.
-//     offset_polygons.push_back(offsetPolyline);
-
-//     // Check max offsets
-//     offsets_counter ++;
-//     if (offsets_counter >= max_offsets)
-//       break;
-//   }
-
-//   return offset_polygons;
-// }
 
 std::vector<ToolpathGenerator::ToolPolyline>
 ToolpathGenerator::computeOffsets(const double &op_width,
@@ -916,6 +840,13 @@ void ToolpathGenerator::archimedeanSpiral() {
   const double delta = op_width_ * scale_;
   offsets_ = computeOffsets(-delta, contour_);
   std::cout << "Number of computed offsets: " << offsets_.size() << "\n";
+
+  if (reference_offset_ > 0) {
+    const double delta = reference_offset_ * scale_;
+    reference_ = computeOffsets(-delta, 2, offsets_.back()).back();
+    reference_ = resampleContour(reference_, contour_resample_step_);
+    reference_.push_back(reference_.front());
+  }
 
   inward_spiral_path_.clear();
   for (size_t i = 0; i < offsets_.size(); ++i) {
