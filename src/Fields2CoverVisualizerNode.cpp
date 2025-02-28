@@ -166,7 +166,7 @@ namespace fields2cover_ros {
     polygon_st2.polygon.points.clear();
     //========================================================
     // merge upath and spiral path and publish
-    // mergePaths(upath);
+    mergePaths(upath);
     //========================================================
     // interpolation with waypoints
     // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
@@ -481,10 +481,10 @@ namespace fields2cover_ros {
       // Set the line width
       merge_paths_marker.scale.x = 0.5; // Line width
 
-      // Set the line color (RGB light purple + alpha)
-      merge_paths_marker.color.r = 0.7;
-      merge_paths_marker.color.g = 0.5;
-      merge_paths_marker.color.b = 0.8;
+      // Set the line color (RGB yellow + alpha)
+      merge_paths_marker.color.r = 1.0;
+      merge_paths_marker.color.g = 1.0;
+      merge_paths_marker.color.b = 0.0;
       merge_paths_marker.color.a = 1.0;
       
       // Add points to the marker
@@ -494,21 +494,28 @@ namespace fields2cover_ros {
       start.y = pt.y;
       merge_paths_marker.points.push_back(start);
 
-      geometry_msgs::Point end;
-      end.x = upath.getStates()[0].point.getX();
-      end.y = upath.getStates()[0].point.getY();
-      merge_paths_marker.points.push_back(end);
-
+      if (!reverse_u_path_) {
+        geometry_msgs::Point end;
+        end.x = upath.getStates()[0].point.getX();
+        end.y = upath.getStates()[0].point.getY();
+        merge_paths_marker.points.push_back(end);
+      }
+      else {
+        geometry_msgs::Point end;
+        end.x = upath.getStates().back().point.getX();
+        end.y = upath.getStates().back().point.getY();
+        merge_paths_marker.points.push_back(end);
+      }
+  
       // publish merge marker
       merge_paths_publisher_.publish(merge_paths_marker);
     }
     else {
-      // visualization_msgs::Marker marker;
-      // marker.action = visualization_msgs::Marker::DELETEALL;
-      // marker.ns = BLOCKED_NS;
-      // marker_array.markers.push_back(marker);
-      // marker.ns = SOLUTION_NS;
-      // merge_paths_publisher_.publish(marker);
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = "map";
+      marker.header.stamp = ros::Time::now();
+      marker.action = visualization_msgs::Marker::DELETEALL;
+      merge_paths_publisher_.publish(marker);
     }
   }
 
