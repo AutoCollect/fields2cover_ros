@@ -101,7 +101,9 @@ namespace fields2cover_ros {
       //===================================================
 
       F2CFields fields_;             ///< Fields data.
-      F2CRobot robot_{2.1, 2.5};     ///< Robot configuration.
+      // a vehicle to fertilize a field, 
+      // with 2 m width and a 6 m operational width
+      F2CRobot robot_{2.0, 6.0};     ///< Robot configuration.
       double m_swath_angle_;         ///< config.swath_angle
       double m_headland_width_;      ///< config.headland_width
       // u path reverse flag

@@ -102,9 +102,16 @@ namespace fields2cover_ros {
       gps2map_transform_ = transformGPStoMap(gps_point);
     }
     //----------------------------------------------------------
+    // F2CRobot
+    //----------------------------------------------------------
+    // getCruiseVel/setCruiseVel: get/set the speed of the vehicle when traveling through the field.
     robot_.setCruiseVel(2.0);
-    robot_.setMaxCurv(0.5); // 1 / radius: 1/2 = 0.5
-    double headland_width = 3.0 * robot_.getCovWidth();
+    // getTurnVel/setTurnVel: get/set the speed of the vehicle when making turns or going through the headlands.
+    // robot_.setTurnVel(0.5);
+    // getMinTurningRadius/setMinTurningRadius and getMaxCurv/setMaxCurv: 
+    // get/set the minimum turning radius or the maximum curvature, respectively. 
+    // Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
+    robot_.setMaxCurv(1 / 3.0); // 1 / radius: 1 / 3 m = 0.5
     //----------------------------------------------------------
     // For demonstration: smooth_number = 0, op_width = 0.5, smooth_boundary = false.
     // set default value
@@ -170,11 +177,17 @@ namespace fields2cover_ros {
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
+
+    // getCovWidth/setCovWidth: get/set the coverage width of the robot, 
+    // also called operational width. 
+    // This parameter defines the width of the swaths in the field.
     robot_.setCovWidth(config.op_width);
+
+    // getMinTurningRadius/setMinTurningRadius and getMaxCurv/setMaxCurv: get/set the minimum turning radius or the maximum curvature, 
+    // respectively. Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
     if (config.turn_radius != 0.0) {
       robot_.setMaxCurv(1.0 / config.turn_radius);
     }
-
     //========================================================
     // upath params
     m_swath_angle_    = config.swath_angle;
