@@ -236,7 +236,7 @@ namespace fields2cover_ros {
     line_strip.type = visualization_msgs::Marker::LINE_STRIP;
 
     // Set the line color (RGB + alpha)
-    line_strip.color.r = 0.0;
+    line_strip.color.r = 1.0;
     line_strip.color.g = 1.0;
     line_strip.color.b = 1.0;
     line_strip.color.a = 1.0;
