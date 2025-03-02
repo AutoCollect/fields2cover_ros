@@ -39,10 +39,9 @@ using ToolPoint = ToolpathGenerator::ToolPoint;
 namespace fields2cover_ros {
     
   void VisualizerNode::init_VisualizerNode() {
-    field_polygon_publisher_      = public_node_handle_.advertise<geometry_msgs::PolygonStamped>  ("/field/border",       10, true);
-    field_2d_border_publisher_    = public_node_handle_.advertise<visualization_msgs::Marker>     ("/field/border_2d",    10, true);
 
-    field_no_headlands_publisher_ = public_node_handle_.advertise<visualization_msgs::Marker>     ("/field/no_headlands", 10, true);
+    field_contour_publisher_      = public_node_handle_.advertise<visualization_msgs::MarkerArray>("/field/contours",     10, true);
+
     field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::MarkerArray>("/field/swaths",       10, true);
 
     // publisher merge paths connection
@@ -122,51 +121,25 @@ namespace fields2cover_ros {
   void VisualizerNode::publish_topics(void) {
 
     //========================================================
-    // 1. 3D border GPS contour publish
-    // 2. 2D border GPS contour publish
-    // 3. 2D grid map generation and publish 
-    //========================================================
-    auto f = fields_[0].getField().clone();
     geometry_msgs::PolygonStamped border_polygon;
-    border_polygon.header.stamp = ros::Time::now();
-    border_polygon.header.frame_id = frame_id_;
-    // transform polygon points coord
-    conversor::ROS::to(f.getCellBorder(0), border_polygon.polygon);
-    transformPoints(gps2map_transform_, border_polygon);
-    // publish 3D GPS border
-    field_polygon_publisher_.publish(border_polygon);
-    //----------------------------------------------------------
-    // calculate 2d GPS border and publish
-    publish_2d_gps_border(border_polygon);
-    //----------------------------------------------------------
+    geometry_msgs::PolygonStamped headland_polygon;
+    //========================================================
+    // Field Contour Generation
+    F2CCell no_headlands = generateFieldsContour(fields_, border_polygon, headland_polygon);
+    //========================================================
     // occupancy grid 2D map creation & publish
     generateGrid(border_polygon);
     //----------------------------------------------------------
     // clear the border polygon cache
     border_polygon.polygon.points.clear();
     //========================================================
-    // no_headlands publisher
-    //========================================================
-    f2c::hg::ConstHL hl_gen_;
-    F2CCell no_headlands = hl_gen_.generateHeadlands(f, m_headland_width_).getGeometry(0);
-    geometry_msgs::PolygonStamped headland_polygon;
-    headland_polygon.header.stamp = ros::Time::now();
-    headland_polygon.header.frame_id = frame_id_;
-    // transfrom no_headlands points coord
-    conversor::ROS::to(no_headlands.getGeometry(0), headland_polygon.polygon);
-    transformPoints(gps2map_transform_, headland_polygon);
-    // publish headland
-    publish_headland(headland_polygon);
-    //========================================================
     // single inward spiral trajectory generation & publish
-    //========================================================
     generateSingleInwardSpiral(headland_polygon);
     //----------------------------------------------------------
     // clear the headland polygon cache
     headland_polygon.polygon.points.clear();
     //========================================================
     // u-turn swaths generation
-    //========================================================
     F2CPath upath = generateSwaths(no_headlands);
     //========================================================
     // merge upath and spiral path and publish
@@ -229,71 +202,123 @@ namespace fields2cover_ros {
     publish_topics();
   }
 
-  void VisualizerNode::publish_2d_gps_border(const geometry_msgs::PolygonStamped& border) {
+  F2CCell VisualizerNode::generateFieldsContour(const F2CFields& fields,
+                                                geometry_msgs::PolygonStamped& border_polygon, 
+                                                geometry_msgs::PolygonStamped& headland_polygon) {
 
-    // calculate 2d GPS and create a marker
-    visualization_msgs::Marker line_strip;
-    line_strip.header.frame_id = frame_id_; // Change to your frame
-    line_strip.header.stamp = ros::Time::now();
-    line_strip.ns = "2d_border_marker";
-    line_strip.action = visualization_msgs::Marker::ADD;
-    line_strip.pose.orientation.w = 1.0;
+    auto f = fields[0].getField().clone();
+    //----------------------------------------------------------
+    // border
+    conversor::ROS::to(f.getCellBorder(0), border_polygon.polygon);
+    transformPoints(gps2map_transform_, border_polygon);
+    //----------------------------------------------------------
+    // headland
+    f2c::hg::ConstHL hl_gen;
+    F2CCell no_headlands = hl_gen.generateHeadlands(f, m_headland_width_).getGeometry(0);
+    conversor::ROS::to(no_headlands.getGeometry(0), headland_polygon.polygon);
+    transformPoints(gps2map_transform_, headland_polygon);
+    //----------------------------------------------------------
+    // publish contours
+    visualization_msgs::MarkerArray marker_array;
 
-    line_strip.id = 0;
-    line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+    // --- Create border_3d contour ---
 
-    // Set the line color (RGB + alpha)
-    line_strip.color.r = 1.0;
-    line_strip.color.g = 1.0;
-    line_strip.color.b = 1.0;
-    line_strip.color.a = 1.0;
+    visualization_msgs::Marker border_3d;
+    border_3d.header.frame_id = frame_id_;
+    border_3d.ns = "border_3d_contour";
+    border_3d.id = 0;
+    border_3d.header.stamp = ros::Time::now();
+    border_3d.action = visualization_msgs::Marker::ADD;
+    border_3d.pose.orientation.w = 1.0;
+    // border_3d.type = visualization_msgs::Marker::LINE_STRIP;
+    border_3d.type = visualization_msgs::Marker::POINTS;
+    border_3d.scale.x = 0.5;
+    border_3d.scale.y = 0.5;
+    border_3d.scale.z = 0.1;
 
-    // Set the line width
-    line_strip.scale.x = 0.2; // Line width
+    border_3d.color.r = 0.0;   // Red
+    border_3d.color.g = 0.0;   // Green
+    border_3d.color.b = 1.0;   // Blue (adjust to get the exact brightness you want)
+    border_3d.color.a = 1.0;   // Full opacity
 
     // Add points to the marker
-    for (const auto& point : border.polygon.points) {
+    for (const auto& point : border_polygon.polygon.points) {
+      geometry_msgs::Point p;
+      p.x = point.x;
+      p.y = point.y;
+      p.z = point.z;
+      border_3d.points.push_back(p);
+    }
+
+    // --- Create border_2d contour ---
+
+    visualization_msgs::Marker border_2d;
+    border_2d.header.frame_id = frame_id_; // Change to your frame
+    border_2d.header.stamp = ros::Time::now();
+    border_2d.ns = "border_2d_contour";
+    border_2d.action = visualization_msgs::Marker::ADD;
+    border_2d.pose.orientation.w = 1.0;
+
+    border_2d.id = 1;
+    border_2d.type = visualization_msgs::Marker::LINE_STRIP;
+
+    // Set the line color (RGB + alpha)
+    border_2d.color.r = 1.0;
+    border_2d.color.g = 1.0;
+    border_2d.color.b = 1.0;
+    border_2d.color.a = 1.0;
+
+    // Set the line width
+    border_2d.scale.x = 0.2; // Line width
+
+    // Add points to the marker
+    for (const auto& point : border_polygon.polygon.points) {
       geometry_msgs::Point p;
       p.x = point.x;
       p.y = point.y;
       p.z = 0.0;
-      line_strip.points.push_back(p);
+      border_2d.points.push_back(p);
     }
 
-    field_2d_border_publisher_.publish(line_strip);
-  }
+    // --- Create border_2d contour ---
 
-  void VisualizerNode::publish_headland(const geometry_msgs::PolygonStamped& headland) {
-    // calculate 2d GPS and create a marker
-    visualization_msgs::Marker line_strip;
-    line_strip.header.frame_id = frame_id_; // Change to your frame
-    line_strip.header.stamp = ros::Time::now();
-    line_strip.ns = "headland_marker";
-    line_strip.action = visualization_msgs::Marker::ADD;
-    line_strip.pose.orientation.w = 1.0;
+    visualization_msgs::Marker headland_marker;
+    headland_marker.header.frame_id = frame_id_; // Change to your frame
+    headland_marker.header.stamp = ros::Time::now();
+    headland_marker.ns = "headland_marker";
+    headland_marker.action = visualization_msgs::Marker::ADD;
+    headland_marker.pose.orientation.w = 1.0;
 
-    line_strip.id = 0;
-    line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+    headland_marker.id = 2;
+    headland_marker.type = visualization_msgs::Marker::LINE_STRIP;
 
-    // Set the line color (RGB + alpha)
-    line_strip.color.r = 1.0;
-    line_strip.color.g = 1.0;
-    line_strip.color.b = 0.0;
-    line_strip.color.a = 1.0;
+    // Set the headland color (RGB + alpha)
+    headland_marker.color.r = 1.0;
+    headland_marker.color.g = 1.0;
+    headland_marker.color.b = 0.0;
+    headland_marker.color.a = 1.0;
     
     // Set the line width
-    line_strip.scale.x = 0.2; // Line width
+    headland_marker.scale.x = 0.2; // Line width
 
     // Add points to the marker
-    for (const auto& point : headland.polygon.points) {
+    for (const auto& point : headland_polygon.polygon.points) {
       geometry_msgs::Point p;
       p.x = point.x;
       p.y = point.y;
       p.z = 0.0;
-      line_strip.points.push_back(p);
+      headland_marker.points.push_back(p);
     }
 
-    field_no_headlands_publisher_.publish(line_strip);
+    //-----------------------------------
+    marker_array.markers.push_back(border_3d);
+    marker_array.markers.push_back(border_2d);
+    marker_array.markers.push_back(headland_marker);
+
+    // publish fields contour and headland
+    field_contour_publisher_.publish(marker_array);
+    //-----------------------------------
+    return no_headlands;
   }
 
   F2CPath VisualizerNode::generateSwaths(F2CCell no_headlands) {
@@ -388,6 +413,7 @@ namespace fields2cover_ros {
 
     visualization_msgs::MarkerArray marker_array;
 
+    // --- Create  upath  ---
     visualization_msgs::Marker marker_swaths;
     marker_swaths.header.frame_id = frame_id_;
     marker_swaths.ns = "upath";

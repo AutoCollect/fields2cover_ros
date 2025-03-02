@@ -69,9 +69,9 @@ namespace fields2cover_ros {
       //===================================================
       // ROS Path Publishers
       //===================================================
-      ros::Publisher field_polygon_publisher_;           ///< Publisher for 2D/3D field border from GPS.
-      ros::Publisher field_2d_border_publisher_;         ///< Publisher for 2D field border from GPS with 0 elevation
-      ros::Publisher field_no_headlands_publisher_;      ///< Publisher for fields inner headlands.
+
+      ros::Publisher field_contour_publisher_;           ///< Publisher for 2D/3D filed border and headland contours
+
       ros::Publisher field_swaths_publisher_;            ///< Publisher for field swaths (U turn part).
 
       ros::Publisher merge_paths_publisher_;             ///< polyline connection btween spiral path and upath
@@ -150,6 +150,19 @@ namespace fields2cover_ros {
       bool  merge_path_ {false};     ///< flag for polyline connection btween spiral path and upath
 
       /**
+       * @brief generate fields 3D/2D contour and headland
+       *        1. 3D border GPS contour publish
+       *        2. 2D border GPS contour publish
+       *        3. headland contour publish
+       * @param fields a F2CFields struct.
+       * @param border_polygon a F2CFields struct.
+       * @param headland_polygon a F2CFields struct.
+       */
+       F2CCell generateFieldsContour(const F2CFields& fields, 
+                                     geometry_msgs::PolygonStamped& border_polygon, 
+                                     geometry_msgs::PolygonStamped& headland_polygon);
+
+      /**
        * @brief generate single inward spiral given a 2d contour
        * @param contour a 2d contour.
        */
@@ -202,18 +215,6 @@ namespace fields2cover_ros {
        * @param poseVec Vector of poses to transform.
        */
       void transformPoses (const geometry_msgs::PoseStamped& poseTransform, std::vector<geometry_msgs::PoseStamped>& poseVec);
-
-      /**
-       * @brief publish gps 2d border.
-       * @param border border polygon.
-       */
-      void publish_2d_gps_border(const geometry_msgs::PolygonStamped& border);
-
-      /**
-       * @brief publish headland.
-       * @param border headland polygon.
-       */
-      void publish_headland(const geometry_msgs::PolygonStamped& headland);
 
       /**
        * @brief Publish a fixed pattern plan.
