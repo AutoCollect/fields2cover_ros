@@ -181,6 +181,12 @@ namespace fields2cover_ros {
        void mergePaths(const F2CPath& upath);
 
       /**
+       * @brief generate 2D grid map.
+       * @param border 2D border polygon vertices
+       */
+      void generateGrid(const geometry_msgs::PolygonStamped& border);
+
+      /**
        * @brief interpolate waypoints
        * @param path F2CPath.
        * @return waypoints.
@@ -285,12 +291,6 @@ namespace fields2cover_ros {
        * @param resolution Resolution of the grid.
        */
       void initializeGrid(double origin_x, double origin_y, int width, int height, double resolution);
-      
-      /**
-       * @brief generate 2D grid map.
-       * @param border 2D border polygon vertices
-       */
-      void generateGrid(const geometry_msgs::PolygonStamped& border);
 
       /**
        * @brief Reverse the orientation of a pose.

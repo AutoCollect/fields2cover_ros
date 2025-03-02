@@ -4,31 +4,30 @@
 //                        BSD-3 License
 //=============================================================================
 
-
-#include "Fields2CoverVisualizerNode.h"
-#include "ros/conversor.h"
-
 #include <fstream>
 #include <iostream>
 
 #include <sys/stat.h>   // For stat()
 #include <cstdio>       // For remove()
 
+#include <nlohmann/json.hpp>
+#include <omp.h>        // OpenMP is enabled
+#include <geodesy/utm.h>
+
 #include <fields2cover_ros/F2CConfig.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <nav_msgs/Path.h> // for fixed pattern plan topic publish
-#include <geometry_msgs/PoseArray.h>
-#include <visualization_msgs/MarkerArray.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // for converting quaternions
 #include <tf2_ros/transform_listener.h>
 
-#include <geodesy/utm.h>
+#include <nav_msgs/Path.h> // for fixed pattern plan topic publish
+#include <geometry_msgs/PoseArray.h>
+#include <visualization_msgs/MarkerArray.h>
 #include <geometry_msgs/Point.h>
 
-#include <nlohmann/json.hpp>
-#include <omp.h>  // Make sure OpenMP is enabled in your build settings.
+#include "Fields2CoverVisualizerNode.h"
+#include "ros/conversor.h"
 
 using json = nlohmann::json;
 using namespace std;
@@ -1072,7 +1071,6 @@ namespace fields2cover_ros {
       marker.points[i].z = new_z;
     }
   }
-    
 
   // transform poseVec
   void VisualizerNode::transformPoses (const geometry_msgs::PoseStamped& poseTransform, std::vector<geometry_msgs::PoseStamped>& poseVec) {
