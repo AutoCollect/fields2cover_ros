@@ -584,7 +584,7 @@ namespace fields2cover_ros {
         end.y = upath.getStates().back().point.getY();
         merge_paths_marker.points.push_back(end);
       }
-  
+
       // publish merge marker
       merge_paths_publisher_.publish(merge_paths_marker);
     }
