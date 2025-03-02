@@ -112,7 +112,7 @@ namespace fields2cover_ros {
     // Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
     robot_.setMaxCurv(1 / 3.0); // 1 / radius: 1 / 3 m = 0.5
     //----------------------------------------------------------
-    // For demonstration: smooth_number = 0, op_width = 0.5, smooth_boundary = false.
+    // For demonstration: smooth_number = 0, operational_width = 0.5, smooth_boundary = false.
     // set default value
     tp_gen_ = new ToolpathGenerator(0, 6.0, false);
   }
@@ -158,7 +158,7 @@ namespace fields2cover_ros {
     // getCovWidth/setCovWidth: get/set the coverage width of the robot, 
     // also called operational width. 
     // This parameter defines the width of the swaths in the field.
-    robot_.setCovWidth(config.op_width);
+    robot_.setCovWidth(config.operational_width);
 
     // getMinTurningRadius/setMinTurningRadius and getMaxCurv/setMaxCurv: get/set the minimum turning radius or the maximum curvature, 
     // respectively. Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
@@ -172,8 +172,8 @@ namespace fields2cover_ros {
 
     // set spiral offset
     tp_gen_->setContourOffset      (config.spiral_headland_offset);
-    tp_gen_->setOperationWidth     (config.op_width);
-    tp_gen_->setMaxOffsets         (config.spiral_offset);
+    tp_gen_->setOperationWidth     (config.operational_width);
+    tp_gen_->setMaxOffsets         (config.spiral_offset_num);
     tp_gen_->setContourResampleStep(config.resample_step);
     tp_gen_->setSpiralReversed     (config.spiral_reversed);
     tp_gen_->setReferenceOffset    (config.reference_offset);
