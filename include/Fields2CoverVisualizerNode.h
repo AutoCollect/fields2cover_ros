@@ -99,7 +99,8 @@ namespace fields2cover_ros {
       //===================================================
       // Field2Cover param
       //===================================================
-
+      // upath
+      bool m_u_path_ {false};        ///< falg to U path generation
       F2CFields fields_;             ///< Fields data.
       // a vehicle to fertilize a field, 
       // with 2 m width and a 6 m operational width
@@ -207,6 +208,12 @@ namespace fields2cover_ros {
        * @param border border polygon.
        */
       void publish_2d_gps_border(const geometry_msgs::PolygonStamped& border);
+
+      /**
+       * @brief publish headland.
+       * @param border headland polygon.
+       */
+      void publish_headland(const geometry_msgs::PolygonStamped& headland);
 
       /**
        * @brief Publish a fixed pattern plan.

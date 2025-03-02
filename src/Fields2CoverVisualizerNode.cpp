@@ -42,7 +42,7 @@ namespace fields2cover_ros {
     field_polygon_publisher_      = public_node_handle_.advertise<geometry_msgs::PolygonStamped>  ("/field/border",       10, true);
     field_2d_border_publisher_    = public_node_handle_.advertise<visualization_msgs::Marker>     ("/field/border_2d",    10, true);
 
-    field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>  ("/field/no_headlands", 10, true);
+    field_no_headlands_publisher_ = public_node_handle_.advertise<visualization_msgs::Marker>     ("/field/no_headlands", 10, true);
     field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::MarkerArray>("/field/swaths",       10, true);
 
     // publisher merge paths connection
@@ -122,48 +122,52 @@ namespace fields2cover_ros {
   void VisualizerNode::publish_topics(void) {
 
     //========================================================
-    // border GPS contour publish
+    // 1. 3D border GPS contour publish
+    // 2. 2D border GPS contour publish
+    // 3. 2D grid map generation and publish 
+    //========================================================
     auto f = fields_[0].getField().clone();
-    geometry_msgs::PolygonStamped polygon_st;
-    polygon_st.header.stamp = ros::Time::now();
-    polygon_st.header.frame_id = frame_id_;
-
+    geometry_msgs::PolygonStamped border_polygon;
+    border_polygon.header.stamp = ros::Time::now();
+    border_polygon.header.frame_id = frame_id_;
     // transform polygon points coord
-    conversor::ROS::to(f.getCellBorder(0), polygon_st.polygon);
-    transformPoints(gps2map_transform_, polygon_st);
-
-    field_polygon_publisher_.publish(polygon_st);
+    conversor::ROS::to(f.getCellBorder(0), border_polygon.polygon);
+    transformPoints(gps2map_transform_, border_polygon);
+    // publish 3D GPS border
+    field_polygon_publisher_.publish(border_polygon);
     //----------------------------------------------------------
     // calculate 2d GPS border and publish
-    publish_2d_gps_border(polygon_st);
+    publish_2d_gps_border(border_polygon);
     //----------------------------------------------------------
     // occupancy grid 2D map creation & publish
-    generateGrid(polygon_st);
+    generateGrid(border_polygon);
     //----------------------------------------------------------
-    // clear the cache
-    polygon_st.polygon.points.clear();
+    // clear the border polygon cache
+    border_polygon.polygon.points.clear();
     //========================================================
     // no_headlands publisher
+    //========================================================
     f2c::hg::ConstHL hl_gen_;
     F2CCell no_headlands = hl_gen_.generateHeadlands(f, m_headland_width_).getGeometry(0);
-    geometry_msgs::PolygonStamped polygon_st2;
-    polygon_st2.header.stamp = ros::Time::now();
-    polygon_st2.header.frame_id = frame_id_;
-
+    geometry_msgs::PolygonStamped headland_polygon;
+    headland_polygon.header.stamp = ros::Time::now();
+    headland_polygon.header.frame_id = frame_id_;
     // transfrom no_headlands points coord
-    conversor::ROS::to(no_headlands.getGeometry(0), polygon_st2.polygon);
-    transformPoints(gps2map_transform_, polygon_st2);
-
-    field_no_headlands_publisher_.publish(polygon_st2);
-    //========================================================
-    // u-turn swaths generation
-    F2CPath upath = generateSwaths(no_headlands);
+    conversor::ROS::to(no_headlands.getGeometry(0), headland_polygon.polygon);
+    transformPoints(gps2map_transform_, headland_polygon);
+    // publish headland
+    publish_headland(headland_polygon);
     //========================================================
     // single inward spiral trajectory generation & publish
-    generateSingleInwardSpiral(polygon_st2);
+    //========================================================
+    generateSingleInwardSpiral(headland_polygon);
     //----------------------------------------------------------
-    // clear no_headlands
-    polygon_st2.polygon.points.clear();
+    // clear the headland polygon cache
+    headland_polygon.polygon.points.clear();
+    //========================================================
+    // u-turn swaths generation
+    //========================================================
+    F2CPath upath = generateSwaths(no_headlands);
     //========================================================
     // merge upath and spiral path and publish
     mergePaths(upath);
@@ -189,7 +193,28 @@ namespace fields2cover_ros {
       robot_.setMaxCurv(1.0 / config.turn_radius);
     }
     //========================================================
+    // spiral params
+    //========================================================
+    m_spiral_path_ = config.spiral_path;
+
+    // set spiral offset
+    tp_gen_->setContourOffset      (config.spiral_headland_offset);
+    tp_gen_->setOperationWidth     (config.op_width);
+    tp_gen_->setMaxOffsets         (config.spiral_offset);
+    tp_gen_->setContourResampleStep(config.resample_step);
+    tp_gen_->setSpiralReversed     (config.spiral_reversed);
+    tp_gen_->setReferenceOffset    (config.reference_offset);
+
+    // Use the cached odometry data to set the spiral entry point
+    double x = latest_odom_.pose.pose.position.x;
+    double y = latest_odom_.pose.pose.position.y;
+    tp_gen_->setSpiralEntryPoint(ToolPoint{x, y});
+    // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
+    //========================================================
     // upath params
+    //========================================================
+    m_u_path_         = config.u_path;
+
     m_swath_angle_    = config.swath_angle;
     m_headland_width_ = config.headland_width;
     automatic_angle_  = config.automatic_angle;
@@ -197,24 +222,6 @@ namespace fields2cover_ros {
     opt_turn_type_    = config.turn_type;
     opt_route_type_   = config.route_type;
     reverse_u_path_   = config.upath_reversed;
-
-    //========================================================
-    // spiral params
-    m_spiral_path_    = config.spiral_path;
-
-    // set spiral offset
-    tp_gen_->setContourOffset (config.spiral_headland_offset);
-    tp_gen_->setOperationWidth(config.op_width);
-    tp_gen_->setMaxOffsets    (config.spiral_offset);
-    tp_gen_->setContourResampleStep(config.resample_step);
-    tp_gen_->setSpiralReversed(config.spiral_reversed);
-    tp_gen_->setReferenceOffset(config.reference_offset);
-    // Use the cached odometry data to set the spiral entry point
-    double x = latest_odom_.pose.pose.position.x;
-    double y = latest_odom_.pose.pose.position.y;
-    tp_gen_->setSpiralEntryPoint(ToolPoint{x, y});
-    // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
-
     //========================================================
     // flag for polyline connection btween spiral path and upath
     merge_path_ = config.merge_path;
@@ -256,7 +263,52 @@ namespace fields2cover_ros {
     field_2d_border_publisher_.publish(line_strip);
   }
 
+  void VisualizerNode::publish_headland(const geometry_msgs::PolygonStamped& headland) {
+    // calculate 2d GPS and create a marker
+    visualization_msgs::Marker line_strip;
+    line_strip.header.frame_id = frame_id_; // Change to your frame
+    line_strip.header.stamp = ros::Time::now();
+    line_strip.ns = "headland_marker";
+    line_strip.action = visualization_msgs::Marker::ADD;
+    line_strip.pose.orientation.w = 1.0;
+
+    line_strip.id = 0;
+    line_strip.type = visualization_msgs::Marker::LINE_STRIP;
+
+    // Set the line color (RGB + alpha)
+    line_strip.color.r = 1.0;
+    line_strip.color.g = 1.0;
+    line_strip.color.b = 0.0;
+    line_strip.color.a = 1.0;
+    
+    // Set the line width
+    line_strip.scale.x = 0.2; // Line width
+
+    // Add points to the marker
+    for (const auto& point : headland.polygon.points) {
+      geometry_msgs::Point p;
+      p.x = point.x;
+      p.y = point.y;
+      p.z = 0.0;
+      line_strip.points.push_back(p);
+    }
+
+    field_no_headlands_publisher_.publish(line_strip);
+  }
+
   F2CPath VisualizerNode::generateSwaths(F2CCell no_headlands) {
+
+    if (!m_u_path_) {
+      visualization_msgs::MarkerArray delete_all;
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = "map";
+      marker.header.stamp = ros::Time::now();
+      marker.action = visualization_msgs::Marker::DELETEALL;  // DELETEALL action
+      delete_all.markers.push_back(marker);
+      field_swaths_publisher_.publish(delete_all);    
+      F2CPath path;
+      return path;
+    }
 
     // swaths path generation
     F2CSwaths swaths;
@@ -467,7 +519,7 @@ namespace fields2cover_ros {
   // TODO
   void VisualizerNode::mergePaths(const F2CPath& upath) {
 
-    if (m_spiral_path_ && merge_path_) {
+    if (m_spiral_path_ && m_u_path_ && merge_path_) {
       // create a merge marker
       visualization_msgs::Marker merge_paths_marker;
       merge_paths_marker.header.frame_id = frame_id_; // Change to your frame
