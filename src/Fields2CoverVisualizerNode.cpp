@@ -28,6 +28,7 @@
 #include <geometry_msgs/Point.h>
 
 #include <nlohmann/json.hpp>
+#include <omp.h>  // Make sure OpenMP is enabled in your build settings.
 
 using json = nlohmann::json;
 using namespace std;
@@ -987,87 +988,91 @@ namespace fields2cover_ros {
 
   // transform PolygonStamped points coord
   void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, geometry_msgs::PolygonStamped& polygon) {
-
+    // Precompute translation components.
+    const double t_x = poseTransform.pose.position.x;
+    const double t_y = poseTransform.pose.position.y;
+    // Note: The z translation is ignored since we force z to 0.
+  
+    // Precompute rotation matrix elements from the quaternion.
     tf2::Quaternion q(
       poseTransform.pose.orientation.x,
       poseTransform.pose.orientation.y,
       poseTransform.pose.orientation.z,
       poseTransform.pose.orientation.w
     );
-    tf2::Vector3 t(
-      poseTransform.pose.position.x,
-      poseTransform.pose.position.y,
-      poseTransform.pose.position.z
-    );
-
-    tf2::Transform transform;
-    transform.setOrigin(t);
-    transform.setRotation(q);
-
-    // Transform each point in the polygon
-    for (auto & pt : polygon.polygon.points) {
-      // Original point
-      tf2::Vector3 p_in(pt.x, pt.y, pt.z);
-
-      // Apply the transform
-      tf2::Vector3 p_out = transform * p_in;
-
-      pt.x = p_out.x();
-      pt.y = p_out.y();
-      // pt.z = p_out.z();
-      pt.z = 0.0;
+    tf2::Matrix3x3 m(q);
+    const double r00 = m[0][0], r01 = m[0][1], r02 = m[0][2];
+    const double r10 = m[1][0], r11 = m[1][1], r12 = m[1][2];
+  
+    // Optionally, for a large number of points, consider using parallelization.
+    #pragma omp parallel for
+    for (size_t i = 0; i < polygon.polygon.points.size(); ++i) {
+      auto &pt = polygon.polygon.points[i];
+      // Compute the new x and y coordinates directly.
+      double new_x = t_x + r00 * pt.x + r01 * pt.y + r02 * pt.z;
+      double new_y = t_y + r10 * pt.x + r11 * pt.y + r12 * pt.z;
+  
+      pt.x = new_x;
+      pt.y = new_y;
+      pt.z = 0.0;  // Force z to zero.
     }
   }
-
+  
   // transform Path -> Marker points coord
   void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, F2CPath& path, visualization_msgs::Marker& marker) {
-
-    // Assume `marker` is a visualization_msgs::Marker member already configured (frame_id, type, etc.)
+    const size_t nPoints = path.size();
+    
+    // Preallocate marker points vector.
     marker.points.clear();
-    marker.points.reserve(path.size());  // reserve memory for efficiency
-
+    marker.points.resize(nPoints);
+    
+    // Precompute translation.
+    const double t_x = poseTransform.pose.position.x;
+    const double t_y = poseTransform.pose.position.y;
+    // Even if poseTransform.pose.position.z exists, we force z to 0.
+    
+    // Precompute the rotation matrix once.
     tf2::Quaternion q(
       poseTransform.pose.orientation.x,
       poseTransform.pose.orientation.y,
       poseTransform.pose.orientation.z,
       poseTransform.pose.orientation.w
     );
-    tf2::Vector3 t(
-      poseTransform.pose.position.x,
-      poseTransform.pose.position.y,
-      poseTransform.pose.position.z
-    );
-
-    tf2::Transform transform;
-    transform.setOrigin(t);
-    transform.setRotation(q);
-
-    // Transform each point in the path
-    for (auto &state : path.getStates()) {
-      // Original point coordinates
-      double x = state.point.getX();
-      double y = state.point.getY();
-      double z = state.point.getZ();
-
-      // Apply the poseTransform to this 3D point (preserves X, Y, Z)
-      tf2::Vector3 input_point(x, y, z);
-      tf2::Vector3 transformed_point = transform * input_point;
-
-      // Update the path's point with transformed coordinates
-      state.point.setX(transformed_point.x());
-      state.point.setY(transformed_point.y());
-      // state.point.setZ(transformed_point.z());
-      state.point.setZ(0.0);
-
-      // Create a ROS Point for the marker and add it to marker.points
-      geometry_msgs::Point ros_point;
-      ros_point.x = transformed_point.x();
-      ros_point.y = transformed_point.y();
-      // ros_point.z = transformed_point.z();
-      ros_point.z = 0.0;
-      marker.points.push_back(ros_point);
+    tf2::Matrix3x3 m(q);
+    const double r00 = m[0][0], r01 = m[0][1], r02 = m[0][2];
+    const double r10 = m[1][0], r11 = m[1][1], r12 = m[1][2];
+    // We ignore the third row as we force z to zero.
+  
+    // Retrieve the states (assumed to be in a contiguous container like std::vector).
+    auto& states = path.getStates();
+  
+    // Use OpenMP for parallel processing if the dataset is large.
+    #pragma omp parallel for
+    for (int i = 0; i < static_cast<int>(nPoints); ++i) {
+      auto& state = states[i];
+      
+      // Get original coordinates.
+      const double x = state.point.getX();
+      const double y = state.point.getY();
+      const double z = state.point.getZ();
+      
+      // Compute transformed coordinates directly.
+      const double new_x = t_x + r00 * x + r01 * y + r02 * z;
+      const double new_y = t_y + r10 * x + r11 * y + r12 * z;
+      const double new_z = 0.0;  // Force z to 0.
+      
+      // Update the state point.
+      state.point.setX(new_x);
+      state.point.setY(new_y);
+      state.point.setZ(new_z);
+      
+      // Update the marker point at the same index.
+      marker.points[i].x = new_x;
+      marker.points[i].y = new_y;
+      marker.points[i].z = new_z;
     }
   }
+    
 
   // transform poseVec
   void VisualizerNode::transformPoses (const geometry_msgs::PoseStamped& poseTransform, std::vector<geometry_msgs::PoseStamped>& poseVec) {
