@@ -129,14 +129,13 @@ namespace fields2cover_ros {
     //========================================================
     // occupancy grid 2D map creation & publish
     generateGrid(border_polygon);
-    //----------------------------------------------------------
-    // clear the border polygon cache
-    border_polygon.polygon.points.clear();
     //========================================================
     // single inward spiral trajectory generation & publish
-    generateSingleInwardSpiral(headland_polygon);
-    //----------------------------------------------------------
-    // clear the headland polygon cache
+    // generateSingleInwardSpiral(headland_polygon);
+    generateSingleInwardSpiral(border_polygon);
+    //========================================================
+    // clear polygon cache
+    border_polygon.polygon.points  .clear();
     headland_polygon.polygon.points.clear();
     //========================================================
     // u-turn swaths generation
@@ -171,7 +170,7 @@ namespace fields2cover_ros {
     m_spiral_path_ = config.spiral_path;
 
     // set spiral offset
-    tp_gen_->setContourOffset      (config.spiral_headland_offset);
+    tp_gen_->setContourOffset      (config.spiral_headland_width);
     tp_gen_->setOperationWidth     (config.operational_width);
     tp_gen_->setMaxOffsets         (config.spiral_offset_num);
     tp_gen_->setContourResampleStep(config.resample_step);
@@ -561,10 +560,10 @@ namespace fields2cover_ros {
 
       // Set the line color (RGB yellow + alpha)
       merge_paths_marker.color.r = 1.0;
-      merge_paths_marker.color.g = 1.0;
-      merge_paths_marker.color.b = 0.0;
+      merge_paths_marker.color.g = 0.0;
+      merge_paths_marker.color.b = 1.0;
       merge_paths_marker.color.a = 1.0;
-      
+
       // Add points to the marker
       ToolPoint pt = tp_gen_->getEntrySpiral().back();
       geometry_msgs::Point start;

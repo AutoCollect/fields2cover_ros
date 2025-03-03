@@ -49,11 +49,8 @@ void ToolpathGenerator::setContour(const ToolPolyline &contour) {
     contour_.push_back(contour_.front());
   }
 
-  if (contour_offset_ > 0) {
-    // compute the headland offset contour 
-    const double delta = contour_offset_ * scale_;
-    contour_ = computeOffsets(delta, 2, contour_).back();
-  }
+  const double delta = contour_offset_ * scale_;
+  contour_ = computeOffsets(-delta, 2, contour_).back();
 }
 
 void ToolpathGenerator::setContourOffset(const double &contour_offset) {
