@@ -112,9 +112,8 @@ namespace fields2cover_ros {
     // Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
     robot_.setMaxCurv(1 / 3.0); // 1 / radius: 1 / 3 m = 0.5
     //----------------------------------------------------------
-    // For demonstration: smooth_number = 0, operational_width = 0.5, smooth_boundary = false.
-    // set default value
-    tp_gen_ = new ToolpathGenerator(0, 6.0, false);
+    // create a new ToolpathGenerator object
+    tp_gen_ = new ToolpathGenerator();
   }
 
 

@@ -19,11 +19,25 @@ double distance(const ToolpathGenerator::ToolPoint &a,
 }  // namespace
 
 // --------------------- Constructor & Setters ---------------------
+ToolpathGenerator::ToolpathGenerator()
+    : op_width_(6.0),
+      contour_offset_(0.0),
+      reference_offset_(0.0),
+      entry_d_0_(0.0),
+      max_offsets_(1),
+      spiral_reversed_(false),
+      poly_name_("Toolpath"),
+      smooth_number_(0),
+      smooth_boundary_(false) {
+  offset_pub_ = nh_.advertise<visualization_msgs::MarkerArray>("/offset_polygon", 10, true);
+  path_pub_   = nh_.advertise<visualization_msgs::MarkerArray>("/spiral_path",    10, true);
+}
+
 ToolpathGenerator::ToolpathGenerator(int smooth_number, double op_width,
                                      bool smooth_boundary)
-    : contour_offset_(0.0),
+    : op_width_(op_width),
+      contour_offset_(0.0),
       reference_offset_(0.0),
-      op_width_(op_width),
       entry_d_0_(0.0),
       max_offsets_(1),
       spiral_reversed_(false),

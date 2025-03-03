@@ -40,12 +40,17 @@ class ToolpathGenerator {
 
   /**
    * @brief Construct a new ToolpathGenerator object.
+   */
+  ToolpathGenerator();
+
+  /**
+   * @brief Construct a new ToolpathGenerator object.
    *
    * @param smooth_number Number of smoothing iterations to apply.
    * @param op_width Offset (step) distance used for generating the toolpath.
    * @param smooth_boundary Whether to smooth the outer boundary.
    */
-  ToolpathGenerator(int smooth_number, double op_width, bool smooth_boundary = true);
+  ToolpathGenerator(int smooth_number, double op_width, bool smooth_boundary = false);
 
   /// Set operation width
   void setOperationWidth(const double &op_width);
