@@ -24,7 +24,6 @@
 #include <nav_msgs/Path.h> // for fixed pattern plan topic publish
 #include <geometry_msgs/PoseArray.h>
 #include <visualization_msgs/MarkerArray.h>
-#include <geometry_msgs/Point.h>
 
 #include "Fields2CoverVisualizerNode.h"
 #include "ros/conversor.h"
@@ -138,7 +137,7 @@ namespace fields2cover_ros {
     headland_polygon.polygon.points.clear();
     //========================================================
     // u-turn swaths generation
-    F2CPath upath = generateSwaths(no_headlands);
+    std::vector<geometry_msgs::Point> upath = generateSwaths(no_headlands);
     //========================================================
     // merge upath and spiral path and publish
     mergePaths(upath);
@@ -319,7 +318,7 @@ namespace fields2cover_ros {
     return no_headlands;
   }
 
-  F2CPath VisualizerNode::generateSwaths(F2CCell no_headlands) {
+  std::vector<geometry_msgs::Point> VisualizerNode::generateSwaths(F2CCell no_headlands) {
 
     if (!m_u_path_) {
       visualization_msgs::MarkerArray delete_all;
@@ -328,9 +327,9 @@ namespace fields2cover_ros {
       marker.header.stamp = ros::Time::now();
       marker.action = visualization_msgs::Marker::DELETEALL;  // DELETEALL action
       delete_all.markers.push_back(marker);
-      field_swaths_publisher_.publish(delete_all);    
-      F2CPath path;
-      return path;
+      field_swaths_publisher_.publish(delete_all);
+      std::vector<geometry_msgs::Point> empty_upath;
+      return empty_upath;
     }
 
     // swaths path generation
@@ -487,14 +486,15 @@ namespace fields2cover_ros {
       last_point_marker.pose.position.z = 0.0;
     }
 
+    // --- publish swaths ---
     marker_array.markers.push_back(marker_swaths);
     marker_array.markers.push_back(first_point_marker);
     marker_array.markers.push_back(last_point_marker);
 
-    // publish swaths
     field_swaths_publisher_.publish(marker_array);
 
-    return path;
+    // --- return ---
+    return std::move(marker_swaths.points);
   }
 
 
@@ -541,7 +541,7 @@ namespace fields2cover_ros {
   }
 
   // TODO
-  void VisualizerNode::mergePaths(const F2CPath& upath) {
+  void VisualizerNode::mergePaths(const std::vector<geometry_msgs::Point>& upath) {
 
     if (m_spiral_path_ && m_u_path_ && merge_path_) {
       // create a merge marker
@@ -563,25 +563,18 @@ namespace fields2cover_ros {
       merge_paths_marker.color.b = 1.0;
       merge_paths_marker.color.a = 1.0;
 
-      // Add points to the marker
+      // Add start point to the marker
       ToolPoint pt = tp_gen_->getEntrySpiral().back();
       geometry_msgs::Point start;
       start.x = pt.x;
       start.y = pt.y;
       merge_paths_marker.points.push_back(start);
 
-      if (!reverse_u_path_) {
-        geometry_msgs::Point end;
-        end.x = upath.getStates()[0].point.getX();
-        end.y = upath.getStates()[0].point.getY();
-        merge_paths_marker.points.push_back(end);
-      }
-      else {
-        geometry_msgs::Point end;
-        end.x = upath.getStates().back().point.getX();
-        end.y = upath.getStates().back().point.getY();
-        merge_paths_marker.points.push_back(end);
-      }
+      // Add end point to the marker
+      geometry_msgs::Point end;
+      end.x = upath.front().x;
+      end.y = upath.front().y;
+      merge_paths_marker.points.push_back(end);
 
       // publish merge marker
       merge_paths_publisher_.publish(merge_paths_marker);

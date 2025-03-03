@@ -16,6 +16,7 @@
 #include <geometry_msgs/PolygonStamped.h>
 #include <geometry_msgs/PoseStamped.h>
 #include <geometry_msgs/PointStamped.h>
+#include <geometry_msgs/Point.h>
 #include <nav_msgs/OccupancyGrid.h>
 #include <geographic_msgs/GeoPoint.h>
 #include <nav_msgs/Odometry.h>
@@ -158,9 +159,9 @@ namespace fields2cover_ros {
        * @param border_polygon a F2CFields struct.
        * @param headland_polygon a F2CFields struct.
        */
-       F2CCell generateFieldsContour(const F2CFields& fields, 
-                                     geometry_msgs::PolygonStamped& border_polygon, 
-                                     geometry_msgs::PolygonStamped& headland_polygon);
+      F2CCell generateFieldsContour(const F2CFields& fields,
+                                    geometry_msgs::PolygonStamped& border_polygon,
+                                    geometry_msgs::PolygonStamped& headland_polygon);
 
       /**
        * @brief generate single inward spiral given a 2d contour
@@ -171,14 +172,14 @@ namespace fields2cover_ros {
       /**
        * @brief generate u turn swaths into headlands
        * @param no_headlands no_headlands.
-       * @return F2CPath sparse path points.
+       * @return sparse path points std::vector<geometry_msgs::Point>.
        */
-      F2CPath generateSwaths(F2CCell no_headlands);
+      std::vector<geometry_msgs::Point> generateSwaths(F2CCell no_headlands);
 
       /**
        * @brief merge spiral path and u path
        */
-       void mergePaths(const F2CPath& upath);
+      void mergePaths(const std::vector<geometry_msgs::Point>& upath);
 
       /**
        * @brief generate 2D grid map.
