@@ -26,6 +26,10 @@
 
 #include "toolpath_generator.hpp"
 
+// Bring the nested types into our local scope for convenience.
+using ToolPolyline = ToolpathGenerator::ToolPolyline;
+using ToolPoint = ToolpathGenerator::ToolPoint;
+
 namespace fields2cover_ros {
 
   /**
@@ -167,7 +171,7 @@ namespace fields2cover_ros {
        * @brief generate single inward spiral given a 2d contour
        * @param contour a 2d contour.
        */
-      void generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour);
+      std::vector<geometry_msgs::Point> generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour);
 
       /**
        * @brief generate u turn swaths into headlands
@@ -179,13 +183,20 @@ namespace fields2cover_ros {
       /**
        * @brief merge spiral path and u path
        */
-      void mergePaths(const std::vector<geometry_msgs::Point>& upath);
+      void mergePaths(const geometry_msgs::Point& start_point, const geometry_msgs::Point& end_point);
 
       /**
        * @brief generate 2D grid map.
        * @param border 2D border polygon vertices
        */
       void generateGrid(const geometry_msgs::PolygonStamped& border);
+
+      /**
+       * @brief convert toolPolyline to ros points
+       * @param toolPolyline ToolPolyline.
+       * @return ros points std::vector<geometry_msgs::Point>.
+       */
+      std::vector<geometry_msgs::Point> convertToRosPoints(const ToolPolyline& toolPolyline);
 
       /**
        * @brief interpolate waypoints

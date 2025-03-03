@@ -31,10 +31,6 @@
 using json = nlohmann::json;
 using namespace std;
 
-// Bring the nested types into our local scope for convenience.
-using ToolPolyline = ToolpathGenerator::ToolPolyline;
-using ToolPoint = ToolpathGenerator::ToolPoint;
-
 namespace fields2cover_ros {
     
   void VisualizerNode::init_VisualizerNode() {
@@ -130,17 +126,17 @@ namespace fields2cover_ros {
     //========================================================
     // single inward spiral trajectory generation & publish
     // generateSingleInwardSpiral(headland_polygon);
-    generateSingleInwardSpiral(border_polygon);
+    std::vector<geometry_msgs::Point> spiral_path = generateSingleInwardSpiral(border_polygon);
     //========================================================
     // clear polygon cache
     border_polygon.polygon.points  .clear();
     headland_polygon.polygon.points.clear();
     //========================================================
     // u-turn swaths generation
-    std::vector<geometry_msgs::Point> upath = generateSwaths(no_headlands);
+    std::vector<geometry_msgs::Point> uturn_path = generateSwaths(no_headlands);
     //========================================================
-    // merge upath and spiral path and publish
-    mergePaths(upath);
+    // merge spiral path and u_path, then publish
+    mergePaths(spiral_path.back(), uturn_path.front());
     //========================================================
     // interpolation with waypoints
     // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
@@ -498,10 +494,12 @@ namespace fields2cover_ros {
   }
 
 
-  void VisualizerNode::generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour) {
+  std::vector<geometry_msgs::Point> VisualizerNode::generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour) {
 
     if (!m_spiral_path_) {
       tp_gen_->deleteMarkers();
+      std::vector<geometry_msgs::Point> empty_spiral_path;
+      return empty_spiral_path;
     }
     else {
       tp_gen_->deleteMarkers ();
@@ -537,11 +535,14 @@ namespace fields2cover_ros {
       } catch (const std::exception &e) {
           std::cerr << "Error in processing polygon " << name << ": " << e.what() << "\n";
       }
+
+      // --- return ---
+      return convertToRosPoints(tp_gen_->getEntrySpiral());
     }
   }
 
   // TODO
-  void VisualizerNode::mergePaths(const std::vector<geometry_msgs::Point>& upath) {
+  void VisualizerNode::mergePaths(const geometry_msgs::Point& start_point, const geometry_msgs::Point& end_point) {
 
     if (m_spiral_path_ && m_u_path_ && merge_path_) {
       // create a merge marker
@@ -564,17 +565,10 @@ namespace fields2cover_ros {
       merge_paths_marker.color.a = 1.0;
 
       // Add start point to the marker
-      ToolPoint pt = tp_gen_->getEntrySpiral().back();
-      geometry_msgs::Point start;
-      start.x = pt.x;
-      start.y = pt.y;
-      merge_paths_marker.points.push_back(start);
+      merge_paths_marker.points.push_back(start_point);
 
       // Add end point to the marker
-      geometry_msgs::Point end;
-      end.x = upath.front().x;
-      end.y = upath.front().y;
-      merge_paths_marker.points.push_back(end);
+      merge_paths_marker.points.push_back(end_point);
 
       // publish merge marker
       merge_paths_publisher_.publish(merge_paths_marker);
@@ -586,6 +580,21 @@ namespace fields2cover_ros {
       marker.action = visualization_msgs::Marker::DELETEALL;
       merge_paths_publisher_.publish(marker);
     }
+  }
+
+  std::vector<geometry_msgs::Point> VisualizerNode::convertToRosPoints(const ToolPolyline& toolPolyline) {
+    std::vector<geometry_msgs::Point> rosPoints;
+    rosPoints.resize(toolPolyline.size());  // Preallocate memory
+
+    std::transform(toolPolyline.begin(), toolPolyline.end(), rosPoints.begin(),
+                   [](const ToolPoint& tp) {
+                       geometry_msgs::Point p;
+                       p.x = tp.x;
+                       p.y = tp.y;
+                       p.z = 0.0;  // z is zero
+                       return p;
+                   });
+    return rosPoints;
   }
 
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const F2CPath& path) {
