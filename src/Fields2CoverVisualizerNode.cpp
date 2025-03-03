@@ -278,7 +278,7 @@ namespace fields2cover_ros {
       border_2d.points.push_back(p);
     }
 
-    // --- Create border_2d contour ---
+    // --- Create headland contour ---
 
     visualization_msgs::Marker headland_marker;
     headland_marker.header.frame_id = frame_id_; // Change to your frame
