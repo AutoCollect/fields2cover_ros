@@ -133,7 +133,7 @@ namespace fields2cover_ros {
     std::vector<geometry_msgs::Point> uturn_path = generateSwaths(no_headlands);
     //----------------------------------------------------------
     // merge spiral path and u_path, then publish
-    // mergePaths(spiral_path, uturn_path);
+    mergePaths(spiral_path, uturn_path);
     //----------------------------------------------------------
     // interpolation with waypoints
     // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
