@@ -116,21 +116,18 @@ namespace fields2cover_ros {
 
     //========================================================
     geometry_msgs::PolygonStamped border_polygon;
-    geometry_msgs::PolygonStamped headland_polygon;
     //========================================================
     // Field Contour Generation
-    F2CCell no_headlands = generateFieldsContour(fields_, border_polygon, headland_polygon);
+    F2CCell no_headlands = generateFieldsContour(fields_, border_polygon);
     //========================================================
     // occupancy grid 2D map creation & publish
     generateGrid(border_polygon);
     //========================================================
     // single inward spiral trajectory generation & publish
-    // generateSingleInwardSpiral(headland_polygon);
     std::vector<geometry_msgs::Point> spiral_path = generateSingleInwardSpiral(border_polygon);
     //========================================================
     // clear polygon cache
-    border_polygon.polygon.points  .clear();
-    headland_polygon.polygon.points.clear();
+    border_polygon.polygon.points.clear();
     //========================================================
     // u-turn swaths generation
     std::vector<geometry_msgs::Point> uturn_path = generateSwaths(no_headlands);
@@ -196,8 +193,7 @@ namespace fields2cover_ros {
   }
 
   F2CCell VisualizerNode::generateFieldsContour(const F2CFields& fields,
-                                                geometry_msgs::PolygonStamped& border_polygon, 
-                                                geometry_msgs::PolygonStamped& headland_polygon) {
+                                                geometry_msgs::PolygonStamped& border_polygon) {
 
     auto f = fields[0].getField().clone();
     //----------------------------------------------------------
@@ -207,6 +203,7 @@ namespace fields2cover_ros {
     //----------------------------------------------------------
     // headland
     f2c::hg::ConstHL hl_gen;
+    geometry_msgs::PolygonStamped headland_polygon;
     F2CCell no_headlands = hl_gen.generateHeadlands(f, m_headland_width_).getGeometry(0);
     conversor::ROS::to(no_headlands.getGeometry(0), headland_polygon.polygon);
     transformPoints(gps2map_transform_, headland_polygon);

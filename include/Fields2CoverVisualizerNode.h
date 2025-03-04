@@ -164,9 +164,7 @@ namespace fields2cover_ros {
        * @param headland_polygon a F2CFields struct.
        */
       F2CCell generateFieldsContour(const F2CFields& fields,
-                                    geometry_msgs::PolygonStamped& border_polygon,
-                                    geometry_msgs::PolygonStamped& headland_polygon);
-
+                                    geometry_msgs::PolygonStamped& border_polygon);
       /**
        * @brief generate single inward spiral given a 2d contour
        * @param contour a 2d contour.
