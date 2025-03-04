@@ -581,8 +581,7 @@ namespace fields2cover_ros {
     }
   }
 
-  
-  // Helper function: cubic Bézier interpolation for a parameter t in [0, 1].
+  // Helper function: interpolate a point on a cubic Bézier curve for parameter t in [0,1].
   geometry_msgs::Point VisualizerNode::interpolateCubicBezier(const geometry_msgs::Point& p0,
                                                               const geometry_msgs::Point& p1,
                                                               const geometry_msgs::Point& p2,
@@ -602,82 +601,99 @@ namespace fields2cover_ros {
       
       return result;
   }
-  
-  // Generate a Bézier curve with a specified number of points.
+
+  // Helper function: generate a cubic Bézier curve given 4 control points and a desired resolution.
   std::vector<geometry_msgs::Point> VisualizerNode::generateBezierCurve(const geometry_msgs::Point& p0,
                                                                         const geometry_msgs::Point& p1,
                                                                         const geometry_msgs::Point& p2,
                                                                         const geometry_msgs::Point& p3,
-                                                                        int num_points) {
+                                                                        int num_points) 
+  {
     std::vector<geometry_msgs::Point> curve;
-    for (int i = 0; i <= num_points; ++i)
-    {
+    for (int i = 0; i <= num_points; ++i) {
       double t = static_cast<double>(i) / num_points;
       curve.push_back(interpolateCubicBezier(p0, p1, p2, p3, t));
     }
     return curve;
   }
-  
-  // Compute a unit vector from point 'from' to point 'to'
-  geometry_msgs::Point VisualizerNode::computeUnitVector(const geometry_msgs::Point& from, const geometry_msgs::Point& to)
+
+  // Helper function: computes a unit vector from 'from' to 'to'
+  geometry_msgs::Point VisualizerNode::computeUnitVector(const geometry_msgs::Point& from, 
+                                                         const geometry_msgs::Point& to) 
   {
     geometry_msgs::Point vec;
     vec.x = to.x - from.x;
     vec.y = to.y - from.y;
     vec.z = to.z - from.z;
     double norm = std::sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-    if (norm > 1e-6)
-    {
+
+    if (norm > 1e-6) {
       vec.x /= norm;
       vec.y /= norm;
       vec.z /= norm;
     }
     return vec;
   }
-  
-  // Compute and return the smooth transition curve between spiral_path and uturn_path.
-  std::vector<geometry_msgs::Point> VisualizerNode::computeTransitionCurve(const std::vector<geometry_msgs::Point>& spiral_path,
-                                                                           const std::vector<geometry_msgs::Point>& uturn_path) {
+
+  // Improved function: Compute a smooth transition curve (using a cubic Bézier curve)
+  // between the end of the spiral_path and the start of the uturn_path.
+  std::vector<geometry_msgs::Point> VisualizerNode::computeTransitionCurve(
+      const std::vector<geometry_msgs::Point>& spiral_path,
+      const std::vector<geometry_msgs::Point>& uturn_path) {
+
     std::vector<geometry_msgs::Point> transitionCurve;
     if (spiral_path.empty() || uturn_path.empty())
-        return transitionCurve;
-    
+    return transitionCurve;
+
     // p0: last point of the spiral path.
     geometry_msgs::Point p0 = spiral_path.back();
     // p3: first point of the U-turn path.
     geometry_msgs::Point p3 = uturn_path.front();
-    
-    // Compute heading at the end of spiral_path using its last two points.
+
+    // Compute heading at the end of the spiral using its last two points.
     geometry_msgs::Point p_prev = (spiral_path.size() >= 2) ? spiral_path[spiral_path.size() - 2] : spiral_path.back();
     geometry_msgs::Point headingSpiral = computeUnitVector(p_prev, p0);
-    
-    // Compute heading at the beginning of uturn_path using its first two points.
+
+    // Compute heading at the beginning of the U-turn using its first two points.
     geometry_msgs::Point p_next = (uturn_path.size() >= 2) ? uturn_path[1] : uturn_path.front();
     geometry_msgs::Point headingUturn = computeUnitVector(p3, p_next);
-    
+
     // Calculate the straight-line distance between p0 and p3.
     double dx = p3.x - p0.x;
     double dy = p3.y - p0.y;
     double dz = p3.z - p0.z;
     double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-    
-    // Set the control distance as a fraction (e.g., 25%) of the distance.
-    double controlDist = distance * 0.25;
-    
+
+    // Compute the angle between the two headings.
+    double dotProduct = headingSpiral.x * headingUturn.x +
+    headingSpiral.y * headingUturn.y +
+    headingSpiral.z * headingUturn.z;
+    // Clamp the dot product to avoid numerical issues.
+    dotProduct = std::max(-1.0, std::min(1.0, dotProduct));
+    double angle = std::acos(dotProduct);
+
+    // Adaptively set the control distance:
+    // Use a base scale (e.g., 0.25) and add extra length proportional to the angle.
+    double controlScale = 0.25 + 0.5 * (angle / M_PI);
+    double controlDist = distance * controlScale;
+
     // Define the control points for the Bézier curve.
     geometry_msgs::Point p1;
     p1.x = p0.x + headingSpiral.x * controlDist;
     p1.y = p0.y + headingSpiral.y * controlDist;
     p1.z = p0.z + headingSpiral.z * controlDist;
-    
+
     geometry_msgs::Point p2;
     p2.x = p3.x - headingUturn.x * controlDist;
     p2.y = p3.y - headingUturn.y * controlDist;
     p2.z = p3.z - headingUturn.z * controlDist;
-    
-    // Generate the transition curve with a chosen number of points (e.g., 10 for smoothness).
-    transitionCurve = generateBezierCurve(p0, p1, p2, p3, 10);
-    
+
+    // Optionally, choose a finer resolution for sharper transitions.
+    int num_points = (angle > 0.5) ? 20 : 10;
+
+    // Generate the Bézier transition curve.
+    transitionCurve = generateBezierCurve(p0, p1, p2, p3, num_points);
+
     return transitionCurve;
   }
 
