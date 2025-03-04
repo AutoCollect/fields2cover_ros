@@ -317,13 +317,6 @@ namespace fields2cover_ros {
        */
       bool parseGeoJsonPose(const std::string& geojson_file, geometry_msgs::PoseStamped& pose_msg);
 
-      // Helper function: cubic Bézier interpolation for a parameter t in [0, 1].
-      geometry_msgs::Point interpolateCubicBezier(const geometry_msgs::Point& p0,
-                                                  const geometry_msgs::Point& p1,
-                                                  const geometry_msgs::Point& p2,
-                                                  const geometry_msgs::Point& p3,
-                                                  double t);
-
       // Generate a Bézier curve with a specified number of points.
       std::vector<geometry_msgs::Point> generateBezierCurve(const geometry_msgs::Point& p0,
                                                             const geometry_msgs::Point& p1,

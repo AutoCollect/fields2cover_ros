@@ -581,27 +581,6 @@ namespace fields2cover_ros {
     }
   }
 
-  // Helper function: interpolate a point on a cubic Bézier curve for parameter t in [0,1].
-  geometry_msgs::Point VisualizerNode::interpolateCubicBezier(const geometry_msgs::Point& p0,
-                                                              const geometry_msgs::Point& p1,
-                                                              const geometry_msgs::Point& p2,
-                                                              const geometry_msgs::Point& p3,
-                                                              double t)
-  {
-      geometry_msgs::Point result;
-      double u = 1.0 - t;
-      double tt = t * t;
-      double uu = u * u;
-      double uuu = uu * u;
-      double ttt = tt * t;
-      
-      result.x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
-      result.y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
-      result.z = uuu * p0.z + 3 * uu * t * p1.z + 3 * u * tt * p2.z + ttt * p3.z;
-      
-      return result;
-  }
-
   // Helper function: generate a cubic Bézier curve given 4 control points and a desired resolution.
   std::vector<geometry_msgs::Point> VisualizerNode::generateBezierCurve(const geometry_msgs::Point& p0,
                                                                         const geometry_msgs::Point& p1,
@@ -610,10 +589,66 @@ namespace fields2cover_ros {
                                                                         int num_points) 
   {
     std::vector<geometry_msgs::Point> curve;
+    curve.reserve(num_points + 1);
+    
+    // Convert the cubic Bézier to polynomial form: p(t) = a*t^3 + b*t^2 + c*t + d
+    double ax = -p0.x + 3 * p1.x - 3 * p2.x + p3.x;
+    double bx = 3 * p0.x - 6 * p1.x + 3 * p2.x;
+    double cx = -3 * p0.x + 3 * p1.x;
+    double dx = p0.x;
+    
+    double ay = -p0.y + 3 * p1.y - 3 * p2.y + p3.y;
+    double by = 3 * p0.y - 6 * p1.y + 3 * p2.y;
+    double cy = -3 * p0.y + 3 * p1.y;
+    double dy = p0.y;
+    
+    double az = -p0.z + 3 * p1.z - 3 * p2.z + p3.z;
+    double bz = 3 * p0.z - 6 * p1.z + 3 * p2.z;
+    double cz = -3 * p0.z + 3 * p1.z;
+    double dz = p0.z;
+    
+    double dt = 1.0 / num_points;
+    double dt2 = dt * dt;
+    double dt3 = dt2 * dt;
+    
+    // Forward differences for x coordinate:
+    double x = dx;
+    double dx1 = cx * dt + bx * dt2 + ax * dt3;
+    double dx2 = 2 * bx * dt2 + 6 * ax * dt3;
+    double dx3 = 6 * ax * dt3;
+    
+    // Forward differences for y coordinate:
+    double y = dy;
+    double dy1 = cy * dt + by * dt2 + ay * dt3;
+    double dy2 = 2 * by * dt2 + 6 * ay * dt3;
+    double dy3 = 6 * ay * dt3;
+    
+    // Forward differences for z coordinate:
+    double z = dz;
+    double dz1 = cz * dt + bz * dt2 + az * dt3;
+    double dz2 = 2 * bz * dt2 + 6 * az * dt3;
+    double dz3 = 6 * az * dt3;
+    
     for (int i = 0; i <= num_points; ++i) {
-      double t = static_cast<double>(i) / num_points;
-      curve.push_back(interpolateCubicBezier(p0, p1, p2, p3, t));
+        geometry_msgs::Point pt;
+        pt.x = x;
+        pt.y = y;
+        pt.z = z;
+        curve.push_back(pt);
+        
+        x += dx1;
+        dx1 += dx2;
+        dx2 += dx3;
+        
+        y += dy1;
+        dy1 += dy2;
+        dy2 += dy3;
+        
+        z += dz1;
+        dz1 += dz2;
+        dz2 += dz3;
     }
+    
     return curve;
   }
 
@@ -625,7 +660,7 @@ namespace fields2cover_ros {
     vec.x = to.x - from.x;
     vec.y = to.y - from.y;
     vec.z = to.z - from.z;
-    double norm = std::sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+    double norm = std::hypot(vec.x, vec.y, vec.z);
 
     if (norm > 1e-6) {
       vec.x /= norm;
@@ -658,16 +693,16 @@ namespace fields2cover_ros {
     geometry_msgs::Point p_next = (uturn_path.size() >= 2) ? uturn_path[1] : uturn_path.front();
     geometry_msgs::Point headingUturn = computeUnitVector(p3, p_next);
 
-    // Calculate the straight-line distance between p0 and p3.
+    // Calculate the straight-line distance between p0 and p3 using std::hypot for 3D distance
     double dx = p3.x - p0.x;
     double dy = p3.y - p0.y;
     double dz = p3.z - p0.z;
-    double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
-
+    double distance = std::hypot(dx, dy, dz); // C++17 style
+  
     // Compute the angle between the two headings.
     double dotProduct = headingSpiral.x * headingUturn.x +
-    headingSpiral.y * headingUturn.y +
-    headingSpiral.z * headingUturn.z;
+                        headingSpiral.y * headingUturn.y +
+                        headingSpiral.z * headingUturn.z;
     // Clamp the dot product to avoid numerical issues.
     dotProduct = std::max(-1.0, std::min(1.0, dotProduct));
     double angle = std::acos(dotProduct);
