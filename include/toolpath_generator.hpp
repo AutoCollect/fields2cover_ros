@@ -139,6 +139,12 @@ class ToolpathGenerator {
 
   void plotPath() const;
 
+  void trimSpiralPath(const int& trim_num) {
+    if(trim_num > 0 && trim_num < inward_spiral_path_.size()) {
+      inward_spiral_path_.resize(inward_spiral_path_.size() - trim_num);
+    }
+  }
+
   ToolPolyline getEntrySpiral() const { return inward_spiral_path_; }
 
   std::vector<ToolPolyline> getOffsets() const { return offsets_; }

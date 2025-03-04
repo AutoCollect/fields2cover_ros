@@ -158,7 +158,8 @@ namespace fields2cover_ros {
     //========================================================
     // spiral params
     //========================================================
-    m_spiral_path_ = config.spiral_path;
+    m_spiral_path_     = config.spiral_path;
+    m_spiral_trim_num_ = config.spiral_trim_num;
 
     // set spiral offset
     tp_gen_->setContourOffset      (config.spiral_headland_width);
@@ -528,6 +529,7 @@ namespace fields2cover_ros {
       //============================================
       try {
           tp_gen_->archimedeanSpiral();
+          tp_gen_->trimSpiralPath(m_spiral_trim_num_);
           tp_gen_->plotPath();
       } catch (const std::exception &e) {
           std::cerr << "Error in processing polygon " << name << ": " << e.what() << "\n";

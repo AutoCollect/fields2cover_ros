@@ -148,6 +148,8 @@ namespace fields2cover_ros {
 
       bool m_spiral_path_ {false};   ///< flag to spiral path generation
 
+      int m_spiral_trim_num_ = 0;    ///< Spiral trim num
+
       //===================================================
       // Other Param
       //===================================================
