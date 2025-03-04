@@ -114,27 +114,27 @@ namespace fields2cover_ros {
 
   void VisualizerNode::publish_topics(void) {
 
-    //========================================================
+    // define border polygon
     geometry_msgs::PolygonStamped border_polygon;
-    //========================================================
+    //----------------------------------------------------------
     // Field Contour Generation
     F2CCell no_headlands = generateFieldsContour(fields_, border_polygon);
-    //========================================================
+    //----------------------------------------------------------
     // occupancy grid 2D map creation & publish
     generateGrid(border_polygon);
-    //========================================================
+    //----------------------------------------------------------
     // single inward spiral trajectory generation & publish
     std::vector<geometry_msgs::Point> spiral_path = generateSingleInwardSpiral(border_polygon);
-    //========================================================
+    //----------------------------------------------------------
     // clear polygon cache
     border_polygon.polygon.points.clear();
-    //========================================================
+    //----------------------------------------------------------
     // u-turn swaths generation
     std::vector<geometry_msgs::Point> uturn_path = generateSwaths(no_headlands);
-    //========================================================
+    //----------------------------------------------------------
     // merge spiral path and u_path, then publish
-    mergePaths(spiral_path.back(), uturn_path.front());
-    //========================================================
+    // mergePaths(spiral_path, uturn_path);
+    //----------------------------------------------------------
     // interpolation with waypoints
     // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
     //========================================================
@@ -539,9 +539,14 @@ namespace fields2cover_ros {
   }
 
   // TODO
-  void VisualizerNode::mergePaths(const geometry_msgs::Point& start_point, const geometry_msgs::Point& end_point) {
+  void VisualizerNode::mergePaths(const std::vector<geometry_msgs::Point>& spiral_path, 
+                                  const std::vector<geometry_msgs::Point>& uturn_path) {
 
     if (m_spiral_path_ && m_u_path_ && merge_path_) {
+
+      std::vector<geometry_msgs::Point> transitionCurve = 
+          computeTransitionCurve(spiral_path, uturn_path);
+
       // create a merge marker
       visualization_msgs::Marker merge_paths_marker;
       merge_paths_marker.header.frame_id = frame_id_; // Change to your frame
@@ -561,11 +566,8 @@ namespace fields2cover_ros {
       merge_paths_marker.color.b = 1.0;
       merge_paths_marker.color.a = 1.0;
 
-      // Add start point to the marker
-      merge_paths_marker.points.push_back(start_point);
-
-      // Add end point to the marker
-      merge_paths_marker.points.push_back(end_point);
+      // Add point to the marker
+      merge_paths_marker.points = transitionCurve;
 
       // publish merge marker
       merge_paths_publisher_.publish(merge_paths_marker);
@@ -577,6 +579,106 @@ namespace fields2cover_ros {
       marker.action = visualization_msgs::Marker::DELETEALL;
       merge_paths_publisher_.publish(marker);
     }
+  }
+
+  
+  // Helper function: cubic Bézier interpolation for a parameter t in [0, 1].
+  geometry_msgs::Point VisualizerNode::interpolateCubicBezier(const geometry_msgs::Point& p0,
+                                                              const geometry_msgs::Point& p1,
+                                                              const geometry_msgs::Point& p2,
+                                                              const geometry_msgs::Point& p3,
+                                                              double t)
+  {
+      geometry_msgs::Point result;
+      double u = 1.0 - t;
+      double tt = t * t;
+      double uu = u * u;
+      double uuu = uu * u;
+      double ttt = tt * t;
+      
+      result.x = uuu * p0.x + 3 * uu * t * p1.x + 3 * u * tt * p2.x + ttt * p3.x;
+      result.y = uuu * p0.y + 3 * uu * t * p1.y + 3 * u * tt * p2.y + ttt * p3.y;
+      result.z = uuu * p0.z + 3 * uu * t * p1.z + 3 * u * tt * p2.z + ttt * p3.z;
+      
+      return result;
+  }
+  
+  // Generate a Bézier curve with a specified number of points.
+  std::vector<geometry_msgs::Point> VisualizerNode::generateBezierCurve(const geometry_msgs::Point& p0,
+                                                                        const geometry_msgs::Point& p1,
+                                                                        const geometry_msgs::Point& p2,
+                                                                        const geometry_msgs::Point& p3,
+                                                                        int num_points) {
+    std::vector<geometry_msgs::Point> curve;
+    for (int i = 0; i <= num_points; ++i)
+    {
+      double t = static_cast<double>(i) / num_points;
+      curve.push_back(interpolateCubicBezier(p0, p1, p2, p3, t));
+    }
+    return curve;
+  }
+  
+  // Compute a unit vector from point 'from' to point 'to'
+  geometry_msgs::Point VisualizerNode::computeUnitVector(const geometry_msgs::Point& from, const geometry_msgs::Point& to)
+  {
+    geometry_msgs::Point vec;
+    vec.x = to.x - from.x;
+    vec.y = to.y - from.y;
+    vec.z = to.z - from.z;
+    double norm = std::sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+    if (norm > 1e-6)
+    {
+      vec.x /= norm;
+      vec.y /= norm;
+      vec.z /= norm;
+    }
+    return vec;
+  }
+  
+  // Compute and return the smooth transition curve between spiral_path and uturn_path.
+  std::vector<geometry_msgs::Point> VisualizerNode::computeTransitionCurve(const std::vector<geometry_msgs::Point>& spiral_path,
+                                                                           const std::vector<geometry_msgs::Point>& uturn_path) {
+    std::vector<geometry_msgs::Point> transitionCurve;
+    if (spiral_path.empty() || uturn_path.empty())
+        return transitionCurve;
+    
+    // p0: last point of the spiral path.
+    geometry_msgs::Point p0 = spiral_path.back();
+    // p3: first point of the U-turn path.
+    geometry_msgs::Point p3 = uturn_path.front();
+    
+    // Compute heading at the end of spiral_path using its last two points.
+    geometry_msgs::Point p_prev = (spiral_path.size() >= 2) ? spiral_path[spiral_path.size() - 2] : spiral_path.back();
+    geometry_msgs::Point headingSpiral = computeUnitVector(p_prev, p0);
+    
+    // Compute heading at the beginning of uturn_path using its first two points.
+    geometry_msgs::Point p_next = (uturn_path.size() >= 2) ? uturn_path[1] : uturn_path.front();
+    geometry_msgs::Point headingUturn = computeUnitVector(p3, p_next);
+    
+    // Calculate the straight-line distance between p0 and p3.
+    double dx = p3.x - p0.x;
+    double dy = p3.y - p0.y;
+    double dz = p3.z - p0.z;
+    double distance = std::sqrt(dx * dx + dy * dy + dz * dz);
+    
+    // Set the control distance as a fraction (e.g., 25%) of the distance.
+    double controlDist = distance * 0.25;
+    
+    // Define the control points for the Bézier curve.
+    geometry_msgs::Point p1;
+    p1.x = p0.x + headingSpiral.x * controlDist;
+    p1.y = p0.y + headingSpiral.y * controlDist;
+    p1.z = p0.z + headingSpiral.z * controlDist;
+    
+    geometry_msgs::Point p2;
+    p2.x = p3.x - headingUturn.x * controlDist;
+    p2.y = p3.y - headingUturn.y * controlDist;
+    p2.z = p3.z - headingUturn.z * controlDist;
+    
+    // Generate the transition curve with a chosen number of points (e.g., 10 for smoothness).
+    transitionCurve = generateBezierCurve(p0, p1, p2, p3, 10);
+    
+    return transitionCurve;
   }
 
   std::vector<geometry_msgs::Point> VisualizerNode::convertToRosPoints(const ToolPolyline& toolPolyline) {

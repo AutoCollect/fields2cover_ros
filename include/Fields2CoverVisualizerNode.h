@@ -181,7 +181,8 @@ namespace fields2cover_ros {
       /**
        * @brief merge spiral path and u path
        */
-      void mergePaths(const geometry_msgs::Point& start_point, const geometry_msgs::Point& end_point);
+      void mergePaths(const std::vector<geometry_msgs::Point>& spiral_path, 
+                      const std::vector<geometry_msgs::Point>& uturn_path);
 
       /**
        * @brief generate 2D grid map.
@@ -315,6 +316,27 @@ namespace fields2cover_ros {
        * @return True if parsing was successful, false otherwise.
        */
       bool parseGeoJsonPose(const std::string& geojson_file, geometry_msgs::PoseStamped& pose_msg);
+
+      // Helper function: cubic Bézier interpolation for a parameter t in [0, 1].
+      geometry_msgs::Point interpolateCubicBezier(const geometry_msgs::Point& p0,
+                                                  const geometry_msgs::Point& p1,
+                                                  const geometry_msgs::Point& p2,
+                                                  const geometry_msgs::Point& p3,
+                                                  double t);
+
+      // Generate a Bézier curve with a specified number of points.
+      std::vector<geometry_msgs::Point> generateBezierCurve(const geometry_msgs::Point& p0,
+                                                            const geometry_msgs::Point& p1,
+                                                            const geometry_msgs::Point& p2,
+                                                            const geometry_msgs::Point& p3,
+                                                            int num_points);
+
+      // Compute a unit vector from point 'from' to point 'to'
+      geometry_msgs::Point computeUnitVector(const geometry_msgs::Point& from, const geometry_msgs::Point& to);
+
+      // Compute and return the smooth transition curve between spiral_path and uturn_path.
+      std::vector<geometry_msgs::Point> computeTransitionCurve(const std::vector<geometry_msgs::Point>& spiral_path, 
+                                                               const std::vector<geometry_msgs::Point>& uturn_path);
   };
 }
 
