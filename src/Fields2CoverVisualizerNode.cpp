@@ -814,83 +814,151 @@ namespace fields2cover_ros {
   }
 
 
+  /*
+  * interpolateWaypoints
+  *
+  * This function generates a dense sequence of poses (geometry_msgs::PoseStamped) from a given
+  * path (a vector of geometry_msgs::Point). It ensures that:
+  *
+  * 1. The linear distance between any two consecutive poses is no greater than m_interp_dist_step_.
+  * 2. Each pose's orientation is set so that it points toward its immediate next neighbor.
+  * 3. The angular difference (yaw) between consecutive poses is no more than m_interp_angular_step_.
+  *    If the yaw difference is too large, additional intermediate poses are inserted.
+  *
+  * Note:
+  * - This code is intended for ROS Noetic. Since ROS Noetic does not provide tf2::getYaw,
+  *   we use tf::getYaw (from <tf/transform_datatypes.h>). Make sure to include that header.
+  */
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const std::vector<geometry_msgs::Point>& path) {
-    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
+    std::vector<geometry_msgs::PoseStamped> poses;
+
+    // Check if the input path has enough points to perform interpolation
     if (path.size() < 2)
-      return fixed_pattern_plan;  // Nothing to interpolate if there is only one point
-  
-    // Process each segment from path[i] to path[i+1]
+      return poses;  // Not enough points to form a valid path
+
+    // ---------------------------------------------------------------------------
+    // 1. Position Interpolation:
+    // ---------------------------------------------------------------------------
+    // For every segment between consecutive path points, generate intermediate points such that
+    // the distance between any two successive points is <= m_interp_dist_step_.
     for (size_t i = 0; i < path.size() - 1; ++i) {
+      // Retrieve the start and end points for the current segment.
       const geometry_msgs::Point& start = path[i];
       const geometry_msgs::Point& end   = path[i + 1];
-  
+
+      // Compute differences along each axis.
       double dx = end.x - start.x;
       double dy = end.y - start.y;
       double dz = end.z - start.z;
-      double segment_length = std::sqrt(dx * dx + dy * dy + dz * dz);
-      if (segment_length < 1e-6)
-        continue;  // Skip if the segment is too short
-  
-      // Compute the yaw for the current segment
-      double current_yaw = std::atan2(dy, dx);
-      // Convert the yaw into a quaternion using Eigen
-      Eigen::Quaterniond q_start(Eigen::AngleAxisd(current_yaw, Eigen::Vector3d::UnitZ()));
-  
-      // Determine the target orientation using the next segment (if available)
-      double next_yaw = current_yaw;
-      if (i < path.size() - 2) {
-        const geometry_msgs::Point& next_point = path[i + 2];
-        double dx_next = next_point.x - end.x;
-        double dy_next = next_point.y - end.y;
-        next_yaw = std::atan2(dy_next, dx_next);
-      }
-      Eigen::Quaterniond q_end(Eigen::AngleAxisd(next_yaw, Eigen::Vector3d::UnitZ()));
-  
-      // Compute step counts for position and orientation interpolation
-      // (angular difference is still used to choose an appropriate number of steps)
-      double delta_yaw = next_yaw - current_yaw;
-      while (delta_yaw > M_PI)  delta_yaw -= 2 * M_PI;
-      while (delta_yaw < -M_PI) delta_yaw += 2 * M_PI;
-  
-      int steps_pos = std::ceil(segment_length / m_interp_dist_step_);
-      int steps_ang = (std::fabs(delta_yaw) > 1e-6) ? std::ceil(std::fabs(delta_yaw) / m_interp_angular_step_) : 1;
-      int steps = std::max(steps_pos, steps_ang);
-      steps = std::max(steps, 1);  // Ensure at least one step
-  
-      // For the very first segment, add the starting pose.
+
+      // Calculate the Euclidean distance of the segment.
+      double seg_length = std::sqrt(dx * dx + dy * dy + dz * dz);
+      if (seg_length < 1e-6)
+        continue;  // Skip degenerate segments with negligible length
+
+      // Determine the number of steps required such that each segment is no longer than m_interp_dist_step_.
+      int num_steps = std::ceil(seg_length / m_interp_dist_step_);
+      num_steps = std::max(num_steps, 1);
+
+      // For the very first segment, add the starting point to the pose vector.
       if (i == 0) {
         geometry_msgs::PoseStamped ps;
         ps.pose.position = start;
-        // Convert Eigen::Quaterniond to tf2::Quaternion
-        tf2::Quaternion tf_q_start(q_start.x(), q_start.y(), q_start.z(), q_start.w());
-        // Now convert to a geometry_msgs::Quaternion message
-        ps.pose.orientation = tf2::toMsg(tf_q_start);
-        fixed_pattern_plan.push_back(ps);
+        poses.push_back(ps);
       }
-  
-      // Interpolate along the segment.
-      // For each step, compute linear interpolation for position and slerp for orientation.
-      for (int step = 1; step <= steps; ++step) {
-        double t = static_cast<double>(step) / steps;
+
+      // Interpolate positions along the segment and add each computed pose.
+      for (int s = 1; s <= num_steps; ++s) {
+        double t = static_cast<double>(s) / num_steps;
         geometry_msgs::PoseStamped ps;
         ps.pose.position.x = start.x + t * dx;
         ps.pose.position.y = start.y + t * dy;
         ps.pose.position.z = start.z + t * dz;
-  
-        // Use slerp to smoothly interpolate between q_start and q_end
-        Eigen::Quaterniond q_interp = q_start.slerp(t, q_end);
-        // Convert Eigen::Quaterniond to tf2::Quaternion
-        tf2::Quaternion tf_q_interp(q_interp.x(), q_interp.y(), q_interp.z(), q_interp.w());
-        // Now convert to a geometry_msgs::Quaternion message
-        ps.pose.orientation = tf2::toMsg(tf_q_interp);
-        fixed_pattern_plan.push_back(ps);
+        poses.push_back(ps);
       }
     }
-  
-    // Publish topics (assumes publishFixedPatternWayPoints is defined elsewhere)
-    publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
 
-    return fixed_pattern_plan;
+    // ---------------------------------------------------------------------------
+    // 2. Orientation Assignment:
+    // ---------------------------------------------------------------------------
+    // For every interpolated pose (except the last one), set its orientation so that it "faces"
+    // the next pose. This is done by computing the yaw angle based on the difference between
+    // the current position and the next position.
+    for (size_t i = 0; i < poses.size() - 1; i++) {
+      // Retrieve current and next positions.
+      const geometry_msgs::Point& cur = poses[i].pose.position;
+      const geometry_msgs::Point& nxt = poses[i + 1].pose.position;
+
+      // Compute the yaw angle using atan2 (result in radians).
+      double yaw = std::atan2(nxt.y - cur.y, nxt.x - cur.x);
+
+      // Create a quaternion from the computed yaw (roll and pitch are zero).
+      tf2::Quaternion q;
+      q.setRPY(0, 0, yaw);
+
+      // Convert the quaternion into a geometry_msgs::Quaternion message.
+      poses[i].pose.orientation = tf2::toMsg(q);
+    }
+    // For the final pose, copy the previous pose's orientation.
+    if (poses.size() > 1) {
+      poses.back().pose.orientation = poses[poses.size() - 2].pose.orientation;
+    }
+
+    // ---------------------------------------------------------------------------
+    // 3. Angular Interpolation:
+    // ---------------------------------------------------------------------------
+    // Check the angular difference (yaw) between consecutive poses.
+    // If the yaw difference exceeds m_interp_angular_step_, add extra poses
+    // with interpolated orientations (and positions) until the difference is within the allowed threshold.
+    std::vector<geometry_msgs::PoseStamped> final_poses;
+    final_poses.push_back(poses[0]);  // Start with the first pose
+
+    for (size_t i = 0; i < poses.size() - 1; ++i) {
+      // Extract current yaw and next yaw using tf::getYaw (from tf/transform_datatypes.h)
+      double yaw_current = tf::getYaw(poses[i].pose.orientation);
+      double yaw_next = tf::getYaw(poses[i + 1].pose.orientation);
+
+      // Compute the yaw difference.
+      double d_yaw = yaw_next - yaw_current;
+      // Normalize the yaw difference to the interval (-pi, pi]
+      while (d_yaw > M_PI)
+        d_yaw -= 2 * M_PI;
+      while (d_yaw <= -M_PI)
+        d_yaw += 2 * M_PI;
+
+      // Determine how many angular steps are needed.
+      int ang_steps = (std::fabs(d_yaw) > m_interp_angular_step_) ? std::ceil(std::fabs(d_yaw) / m_interp_angular_step_) : 1;
+
+      // Insert additional intermediate poses if the angular difference is too large.
+      for (int j = 1; j < ang_steps; ++j) {
+        double t = static_cast<double>(j) / ang_steps;
+        double interp_yaw = yaw_current + t * d_yaw;
+
+        // Interpolate the position linearly between the current and next pose.
+        geometry_msgs::PoseStamped ps;
+        ps.pose.position.x = poses[i].pose.position.x + t * (poses[i + 1].pose.position.x - poses[i].pose.position.x);
+        ps.pose.position.y = poses[i].pose.position.y + t * (poses[i + 1].pose.position.y - poses[i].pose.position.y);
+        ps.pose.position.z = poses[i].pose.position.z + t * (poses[i + 1].pose.position.z - poses[i].pose.position.z);
+
+        // Create a quaternion from the interpolated yaw.
+        tf2::Quaternion q;
+        q.setRPY(0, 0, interp_yaw);
+        ps.pose.orientation = tf2::toMsg(q);
+
+        // Add the intermediate pose.
+        final_poses.push_back(ps);
+      }
+      // Add the next original pose.
+      final_poses.push_back(poses[i + 1]);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Optional: Publish the final set of interpolated waypoints.
+    // This can be useful for visualization or debugging.
+    publishFixedPatternWayPoints(final_poses, fixed_pattern_plan_pose_array_pub_);
+
+    // Return the final, densely interpolated pose sequence.
+    return final_poses;
   }
 
 
