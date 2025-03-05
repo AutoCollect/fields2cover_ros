@@ -123,19 +123,25 @@ namespace fields2cover_ros {
       //===================================================
       // Save to File
       //===================================================
+      
+      bool m_save_path_path_ {false}; ///< Save path file
+
       // cache file path
-      bool is_cache_mode_;           ///< Flag for cache mode.
-      std::string cache_directory_;  ///< Directory for cache files.
+      bool is_cache_mode_;            ///< Flag for cache mode.
+      std::string cache_directory_;   ///< Directory for cache files.
 
       // filed file path
-      std::string field_file_path_;  ///< Path to the field file.
-      int path_file_seq_ = 0;        ///< Sequence number for path files.
+      std::string field_file_path_;   ///< Path to the field file.
+      int path_file_seq_ = 0;         ///< Sequence number for path files.
 
       // U path waypoints interpolation gap
-      double interp_step_ = 0.01;    ///< Interpolation step for U path waypoints.
+      double interp_step_ = 0.01;     ///< Interpolation step for U path waypoints.
+
+      double m_interp_dist_step_    = 0.05;  ///< linear interpolation distance step.
+      double m_interp_angular_step_ = 0.1;   ///< linear interpolation angular step 
 
       // trajectory publish frame id
-      std::string frame_id_;         ///< Frame ID for trajectory publishing.
+      std::string frame_id_;          ///< Frame ID for trajectory publishing.
 
       // first gps transfrom from utm frame to map frame
       geometry_msgs::PoseStamped gps2map_transform_; ///< Transform from GPS to map frame.
@@ -183,8 +189,8 @@ namespace fields2cover_ros {
       /**
        * @brief merge spiral path and u path
        */
-      void mergePaths(const std::vector<geometry_msgs::Point>& spiral_path, 
-                      const std::vector<geometry_msgs::Point>& uturn_path);
+       std::vector<geometry_msgs::Point> mergePaths(const std::vector<geometry_msgs::Point>& spiral_path, 
+                                                    const std::vector<geometry_msgs::Point>& uturn_path);
 
       /**
        * @brief generate 2D grid map.
@@ -205,6 +211,13 @@ namespace fields2cover_ros {
        * @return waypoints.
        */
       std::vector<geometry_msgs::PoseStamped> interpolateWaypoints(const F2CPath& path);
+
+      /**
+       * @brief interpolate waypoints
+       * @param path std::vector<geometry_msgs::Point>.
+       * @return waypoints.
+       */
+      std::vector<geometry_msgs::PoseStamped> interpolateWaypoints(const std::vector<geometry_msgs::Point>& path);
 
       /**
        * @brief Transform GPS coordinates to map frame coordinates.

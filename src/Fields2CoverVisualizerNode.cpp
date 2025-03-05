@@ -132,15 +132,49 @@ namespace fields2cover_ros {
     // u-turn swaths generation
     std::vector<geometry_msgs::Point> uturn_path = generateSwaths(no_headlands);
     //----------------------------------------------------------
-    // merge spiral path and u_path, then publish
-    mergePaths(spiral_path, uturn_path);
+    // generate transition curve for merging spiral path and u_path, then publish
+    std::vector<geometry_msgs::Point> transition_path = mergePaths(spiral_path, uturn_path);
     //----------------------------------------------------------
-    // interpolation with waypoints
-    // std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan = interpolateWaypoints(path);
-    //========================================================
-    // save path file each modification step
-    // savePath(fixed_pattern_plan);
-    //========================================================
+    // define plan
+    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
+    //----------------------------------------------------------
+    // interpolate paths
+    //----------------------------------------------------------
+    if (m_save_path_path_) {
+      if (!spiral_path.empty() && !uturn_path.empty() && !transition_path.empty()) {
+        std::vector<geometry_msgs::Point> path;
+        // append all paths
+        // A.insert(A.end(), B.begin(), B.end());
+        path.insert(path.end(),     spiral_path.begin(),     spiral_path.end());
+        path.insert(path.end(), transition_path.begin(), transition_path.end());
+        path.insert(path.end(),      uturn_path.begin(),      uturn_path.end());
+        fixed_pattern_plan = interpolateWaypoints(path);
+        path.clear();
+      }
+      else if (!spiral_path.empty() && uturn_path.empty() && transition_path.empty()) {
+        fixed_pattern_plan = interpolateWaypoints(spiral_path);
+      }
+      else if (spiral_path.empty() && !uturn_path.empty() && transition_path.empty()) {
+        fixed_pattern_plan = interpolateWaypoints(uturn_path);
+      }
+      else {
+        // TODO later
+      }
+    }
+    //----------------------------------------------------------
+    // save plan
+    //----------------------------------------------------------
+    // if (m_save_path_path_) {
+    //   savePath(fixed_pattern_plan);
+    // }
+    //----------------------------------------------------------
+    // clear temp paths cache
+    //----------------------------------------------------------
+    spiral_path.clear();
+    uturn_path.clear();
+    transition_path.clear();
+    fixed_pattern_plan.clear();
+    //----------------------------------------------------------
   }
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
@@ -540,14 +574,15 @@ namespace fields2cover_ros {
     }
   }
 
-  // TODO
-  void VisualizerNode::mergePaths(const std::vector<geometry_msgs::Point>& spiral_path, 
+  std::vector<geometry_msgs::Point> VisualizerNode::mergePaths(
+                                  const std::vector<geometry_msgs::Point>& spiral_path, 
                                   const std::vector<geometry_msgs::Point>& uturn_path) {
+
+    std::vector<geometry_msgs::Point> transitionCurve;
 
     if (m_spiral_path_ && m_u_path_ && merge_path_) {
 
-      std::vector<geometry_msgs::Point> transitionCurve = 
-          computeTransitionCurve(spiral_path, uturn_path);
+      transitionCurve = computeTransitionCurve(spiral_path, uturn_path);
 
       // create a merge marker
       visualization_msgs::Marker merge_paths_marker;
@@ -581,6 +616,8 @@ namespace fields2cover_ros {
       marker.action = visualization_msgs::Marker::DELETEALL;
       merge_paths_publisher_.publish(marker);
     }
+
+    return transitionCurve;
   }
 
   // Helper function: generate a cubic Bézier curve given 4 control points and a desired resolution.
@@ -749,6 +786,90 @@ namespace fields2cover_ros {
     return rosPoints;
   }
 
+
+  std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const std::vector<geometry_msgs::Point>& path) {
+    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
+    if (path.size() < 2)
+      return fixed_pattern_plan;  // Nothing to interpolate if there is only one point
+  
+    // Process each segment from path[i] to path[i+1]
+    for (size_t i = 0; i < path.size() - 1; ++i) {
+      const geometry_msgs::Point& start = path[i];
+      const geometry_msgs::Point& end   = path[i + 1];
+  
+      double dx = end.x - start.x;
+      double dy = end.y - start.y;
+      double dz = end.z - start.z;
+      double segment_length = std::sqrt(dx * dx + dy * dy + dz * dz);
+      if (segment_length < 1e-6)
+        continue;  // Skip if the segment is too short
+  
+      // Compute the yaw (orientation) for the current segment
+      double current_yaw = std::atan2(dy, dx);
+  
+      // If available, get the next segment's yaw for smooth orientation blending.
+      // Otherwise, use the current yaw.
+      double next_yaw = current_yaw;
+      if (i < path.size() - 2) {
+        const geometry_msgs::Point& next_point = path[i + 2];
+        double dx_next = next_point.x - end.x;
+        double dy_next = next_point.y - end.y;
+        next_yaw = std::atan2(dy_next, dx_next);
+      }
+  
+      // Normalize the angular difference between the current and next yaw to the range [–π, π]
+      double delta_yaw = next_yaw - current_yaw;
+      while (delta_yaw > M_PI)
+        delta_yaw -= 2 * M_PI;
+      while (delta_yaw < -M_PI)
+        delta_yaw += 2 * M_PI;
+  
+      // Compute the number of steps required for position and orientation separately.
+      int steps_pos = std::ceil(segment_length / m_interp_dist_step_);
+      int steps_ang = (std::fabs(delta_yaw) > 1e-6) ? std::ceil(std::fabs(delta_yaw) / m_interp_angular_step_) : 1;
+      int steps = std::max(steps_pos, steps_ang);
+      steps = std::max(steps, 1);  // Ensure at least one step
+  
+      // For the very first segment, add the starting pose.
+      if (i == 0) {
+        geometry_msgs::PoseStamped ps;
+        ps.pose.position = start;
+        ps.pose.orientation = tf::createQuaternionMsgFromYaw(current_yaw);
+        fixed_pattern_plan.push_back(ps);
+      }
+  
+      // Interpolate along the segment.
+      // For each interpolation step, compute a linear interpolation (for position)
+      // and (if not at the end of the path) a smooth interpolation of orientation.
+      for (int step = 1; step <= steps; ++step) {
+        double t = static_cast<double>(step) / steps;
+        geometry_msgs::PoseStamped ps;
+        ps.pose.position.x = start.x + t * dx;
+        ps.pose.position.y = start.y + t * dy;
+        ps.pose.position.z = start.z + t * dz;
+  
+        double interp_yaw = current_yaw;
+        // Only interpolate orientation if a next segment exists (i.e. at a turning point)
+        if (i < path.size() - 2) {
+          interp_yaw = current_yaw + t * delta_yaw;
+          while (interp_yaw > M_PI)
+            interp_yaw -= 2 * M_PI;
+          while (interp_yaw < -M_PI)
+            interp_yaw += 2 * M_PI;
+        }
+        ps.pose.orientation = tf::createQuaternionMsgFromYaw(interp_yaw);
+  
+        fixed_pattern_plan.push_back(ps);
+      }
+    }
+
+    // publish topics
+    publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
+
+    return fixed_pattern_plan;
+  }
+
+
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const F2CPath& path) {
     // interpolation with waypoints
     geometry_msgs::PoseStamped pre_wpt;
@@ -899,33 +1020,34 @@ namespace fields2cover_ros {
   }
 
   void VisualizerNode::savePath(const std::vector<geometry_msgs::PoseStamped>& path) {
-
-    std::ofstream path_file;
-    std::string path_file_name;
-
-    if (!is_cache_mode_) {
-      path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
-    }
-    else { // cache mode
-      path_file_name = field_file_path_ + "/path.txt";
-
-      // Check if file exists
-      struct stat buffer;
-      if (stat(path_file_name.c_str(), &buffer) == 0) {
-        // File already exists; remove it
-        if (std::remove(path_file_name.c_str()) != 0) {
-          ROS_ERROR("Failed to remove existing file: %s", path_file_name.c_str());
-          // Optionally, handle the error (return / exit / etc.)
-        } else {
-          ROS_INFO("Removed existing file: %s", path_file_name.c_str());
+    if (m_save_path_path_ && !path.empty()) {
+      std::ofstream path_file;
+      std::string path_file_name;
+  
+      if (!is_cache_mode_) {
+        path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
+      }
+      else { // cache mode
+        path_file_name = field_file_path_ + "/path.txt";
+  
+        // Check if file exists
+        struct stat buffer;
+        if (stat(path_file_name.c_str(), &buffer) == 0) {
+          // File already exists; remove it
+          if (std::remove(path_file_name.c_str()) != 0) {
+            ROS_ERROR("Failed to remove existing file: %s", path_file_name.c_str());
+            // Optionally, handle the error (return / exit / etc.)
+          } else {
+            ROS_INFO("Removed existing file: %s", path_file_name.c_str());
+          }
         }
       }
-    }
-
-    path_file.open(path_file_name);
-    writePathToFile(path, path_file);
-    path_file.close();
-    ROS_INFO("%s generated", path_file_name.c_str());
+  
+      path_file.open(path_file_name);
+      writePathToFile(path, path_file);
+      path_file.close();
+      ROS_INFO("%s generated", path_file_name.c_str());  
+    } 
   }
 
   void VisualizerNode::initializeGrid(double origin_x, double origin_y, int width, int height, double resolution) {
