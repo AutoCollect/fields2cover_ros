@@ -114,6 +114,15 @@ namespace fields2cover_ros {
 
   void VisualizerNode::publish_topics(void) {
 
+    //----------------------------------------------------------
+    // clear temp paths cache
+    //----------------------------------------------------------
+    m_spiral_path_.clear();
+    m_uturn_path_.clear();
+    m_transition_path_.clear();
+    std::vector<geometry_msgs::PoseStamped> empty_plan;
+    publishFixedPatternWayPoints(empty_plan, fixed_pattern_plan_pose_array_pub_);
+    //----------------------------------------------------------
     // define border polygon
     geometry_msgs::PolygonStamped border_polygon;
     //----------------------------------------------------------
@@ -124,69 +133,71 @@ namespace fields2cover_ros {
     generateGrid(border_polygon);
     //----------------------------------------------------------
     // single inward spiral trajectory generation & publish
-    std::vector<geometry_msgs::Point> spiral_path = generateSingleInwardSpiral(border_polygon);
+    m_spiral_path_ = generateSingleInwardSpiral(border_polygon);
     //----------------------------------------------------------
     // clear polygon cache
     border_polygon.polygon.points.clear();
     //----------------------------------------------------------
     // u-turn swaths generation
-    std::vector<geometry_msgs::Point> uturn_path = generateSwaths(no_headlands);
+    m_uturn_path_ = generateSwaths(no_headlands);
     //----------------------------------------------------------
     // generate transition curve for merging spiral path and u_path, then publish
-    std::vector<geometry_msgs::Point> transition_path = mergePaths(spiral_path, uturn_path);
+    m_transition_path_ = mergePaths(m_spiral_path_, m_uturn_path_);
+    //----------------------------------------------------------
+  }
+
+  void VisualizerNode::processPaths() {
+
     //----------------------------------------------------------
     // define plan
     std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
     //----------------------------------------------------------
     // interpolate paths
     //----------------------------------------------------------
-    if (m_save_path_path_) {
-      if (!spiral_path.empty() && !uturn_path.empty() && !transition_path.empty()) {
-        std::vector<geometry_msgs::Point> path;
-        // append all paths
-        // A.insert(A.end(), B.begin(), B.end());
-        path.insert(path.end(),     spiral_path.begin(),     spiral_path.end());
-        path.insert(path.end(), transition_path.begin(), transition_path.end());
-        path.insert(path.end(),      uturn_path.begin(),      uturn_path.end());
-        fixed_pattern_plan = interpolateWaypoints(path);
-        path.clear();
-      }
-      else if (!spiral_path.empty() && uturn_path.empty() && transition_path.empty()) {
-        fixed_pattern_plan = interpolateWaypoints(spiral_path);
-      }
-      else if (spiral_path.empty() && !uturn_path.empty() && transition_path.empty()) {
-        fixed_pattern_plan = interpolateWaypoints(uturn_path);
-      }
-      else {
-        // TODO later
-        ROS_ERROR("debug");
-      }
-
-      ROS_ERROR("fixed_pattern_plan size: %d", int(fixed_pattern_plan.size()));
+    if (!m_spiral_path_.empty() && !m_uturn_path_.empty() && !m_transition_path_.empty()) {
+      std::vector<geometry_msgs::Point> path;
+      // append all paths
+      // A.insert(A.end(), B.begin(), B.end());
+      path.insert(path.end(),     m_spiral_path_.begin(),     m_spiral_path_.end());
+      path.insert(path.end(), m_transition_path_.begin(), m_transition_path_.end());
+      path.insert(path.end(),      m_uturn_path_.begin(),      m_uturn_path_.end());
+      fixed_pattern_plan = interpolateWaypoints(path);
+      path.clear();
+      ROS_ERROR("[Debug] multi_headlands_path");
     }
+    else if (!m_spiral_path_.empty() && m_uturn_path_.empty() && m_transition_path_.empty()) {
+      fixed_pattern_plan = interpolateWaypoints(m_spiral_path_);
+      ROS_ERROR("[Debug] publish spiral_path");
+    }
+    else if (m_spiral_path_.empty() && !m_uturn_path_.empty() && m_transition_path_.empty()) {
+      fixed_pattern_plan = interpolateWaypoints(m_uturn_path_);
+      ROS_ERROR("[Debug] publish uturn_path");
+    }
+    else {
+      std::vector<geometry_msgs::PoseStamped> empty_plan;
+      publishFixedPatternWayPoints(empty_plan, fixed_pattern_plan_pose_array_pub_);  
+      ROS_ERROR("[Debug] publish an empty plan inside m_save_path");
+    }
+
+    ROS_ERROR("fixed_pattern_plan size: %d", int(fixed_pattern_plan.size()));
+
     //----------------------------------------------------------
     // save plan
     //----------------------------------------------------------
-    // if (m_save_path_path_) {
+    // if (m_save_path_) {
     //   savePath(fixed_pattern_plan);
     // }
-    //----------------------------------------------------------
-    // clear temp paths cache
-    //----------------------------------------------------------
-    spiral_path.clear();
-    uturn_path.clear();
-    transition_path.clear();
-    fixed_pattern_plan.clear();
-    //----------------------------------------------------------
+
   }
+
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
 
     //========================================================
     // spiral params
     //========================================================
-    m_spiral_path_     = config.spiral_path;
-    m_spiral_trim_num_ = config.spiral_trim_num;
+    m_active_spiral_path_ = config.spiral_path;
+    m_spiral_trim_num_    = config.spiral_trim_num;
 
     // set spiral offset
     tp_gen_->setContourOffset      (config.spiral_headland_width);
@@ -204,7 +215,7 @@ namespace fields2cover_ros {
     //========================================================
     // upath params
     //========================================================
-    m_u_path_         = config.u_path;
+    m_active_u_path_ = config.u_path;
 
     // getCovWidth/setCovWidth: get/set the coverage width of the robot, 
     // also called operational width. 
@@ -228,12 +239,17 @@ namespace fields2cover_ros {
     // common params
     //========================================================
 
-    merge_path_       = config.merge_path;
-    m_save_path_path_ = config.save_path;
+    m_active_merge_path_ = config.merge_path;
+    m_save_path_         = config.save_path;
 
     //========================================================
     // path generation
-    publish_topics();
+    if (!m_save_path_) {
+      publish_topics();
+    }
+    else {
+      processPaths();
+    }
   }
 
   F2CCell VisualizerNode::generateFieldsContour(const F2CFields& fields,
@@ -357,7 +373,7 @@ namespace fields2cover_ros {
 
   std::vector<geometry_msgs::Point> VisualizerNode::generateSwaths(F2CCell no_headlands) {
 
-    if (!m_u_path_) {
+    if (!m_active_u_path_) {
       visualization_msgs::MarkerArray delete_all;
       visualization_msgs::Marker marker;
       marker.header.frame_id = "map";
@@ -537,7 +553,7 @@ namespace fields2cover_ros {
 
   std::vector<geometry_msgs::Point> VisualizerNode::generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour) {
 
-    if (!m_spiral_path_) {
+    if (!m_active_spiral_path_) {
       tp_gen_->deleteMarkers();
       std::vector<geometry_msgs::Point> empty_spiral_path;
       return empty_spiral_path;
@@ -589,7 +605,7 @@ namespace fields2cover_ros {
 
     std::vector<geometry_msgs::Point> transitionCurve;
 
-    if (m_spiral_path_ && m_u_path_ && merge_path_) {
+    if (m_active_spiral_path_ && m_active_u_path_ && m_active_merge_path_) {
 
       transitionCurve = computeTransitionCurve(spiral_path, uturn_path);
 
@@ -956,17 +972,19 @@ namespace fields2cover_ros {
   }
 
   void VisualizerNode::publishFixedPatternWayPoints(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub) {
-
     // Create a PoseArray and populate it from the vector
     geometry_msgs::PoseArray pose_array;
     pose_array.header.frame_id = frame_id_;
     pose_array.header.stamp = ros::Time::now();
 
-    for (const auto& pose_stamped : path) {
-      pose_array.poses.push_back(pose_stamped.pose); // Add only the pose part
+    // If the path is not empty, add poses. Otherwise, leave pose_array.poses empty.
+    if (!path.empty()) {
+      for (const auto& pose_stamped : path) {
+        pose_array.poses.push_back(pose_stamped.pose);
+      }
     }
-
-    // Publish the PoseArray
+    
+    // Publish the (possibly empty) PoseArray so RViz will update its display
     pub.publish(pose_array);
   }
 
@@ -1029,7 +1047,7 @@ namespace fields2cover_ros {
   }
 
   void VisualizerNode::savePath(const std::vector<geometry_msgs::PoseStamped>& path) {
-    if (m_save_path_path_ && !path.empty()) {
+    if (m_save_path_ && !path.empty()) {
       std::ofstream path_file;
       std::string path_file_name;
   

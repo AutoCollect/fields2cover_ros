@@ -38,6 +38,17 @@ namespace fields2cover_ros {
    */
   class VisualizerNode {
     public:
+
+      ~VisualizerNode() {
+        m_spiral_path_.clear();
+        m_uturn_path_.clear();
+        m_transition_path_.clear();
+        if (tp_gen_) {
+          delete tp_gen_;    // Calls the destructor and deallocates memory
+          tp_gen_ = nullptr; // Prevents dangling pointer issues
+        }
+      }
+
       /**
        * @brief Initialize the VisualizerNode.
        */
@@ -64,7 +75,10 @@ namespace fields2cover_ros {
        * @brief Save the current path.
        * @param path Path to write with default filename
        */
-       void savePath(const std::vector<geometry_msgs::PoseStamped>& path);
+      void savePath(const std::vector<geometry_msgs::PoseStamped>& path);
+
+      
+      void processPaths();
 
     private:
 
@@ -105,7 +119,7 @@ namespace fields2cover_ros {
       // Field2Cover param
       //===================================================
       // upath
-      bool m_u_path_ {false};        ///< falg to U path generation
+      bool m_active_u_path_ {false}; ///< falg to U path generation
       F2CFields fields_;             ///< Fields data.
       // a vehicle to fertilize a field, 
       // with 2 m width and a 6 m operational width
@@ -123,9 +137,13 @@ namespace fields2cover_ros {
       //===================================================
       // Save to File
       //===================================================
-      
-      bool m_save_path_path_ {false}; ///< Save path file
 
+      bool m_save_path_ {false}; ///< Save path file
+
+      std::vector<geometry_msgs::Point> m_spiral_path_;
+      std::vector<geometry_msgs::Point> m_uturn_path_;
+      std::vector<geometry_msgs::Point> m_transition_path_;
+  
       // cache file path
       bool is_cache_mode_;            ///< Flag for cache mode.
       std::string cache_directory_;   ///< Directory for cache files.
@@ -150,17 +168,17 @@ namespace fields2cover_ros {
       // Spiral Path Param
       //===================================================
       /// spiral path
-      ToolpathGenerator* tp_gen_;    ///< spiral path generator
+      ToolpathGenerator* tp_gen_;           ///< spiral path generator
 
-      bool m_spiral_path_ {false};   ///< flag to spiral path generation
+      bool m_active_spiral_path_ {false};   ///< flag to spiral path generation
 
-      int m_spiral_trim_num_ = 0;    ///< Spiral trim num
+      int m_spiral_trim_num_ = 0;           ///< Spiral trim num
 
       //===================================================
       // Other Param
       //===================================================
       /// flag for path merge
-      bool  merge_path_ {false};     ///< flag for polyline connection btween spiral path and upath
+      bool  m_active_merge_path_ {false}; ///< flag for polyline connection btween spiral path and upath
 
       /**
        * @brief generate fields 3D/2D contour and headland
