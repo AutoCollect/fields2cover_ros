@@ -159,7 +159,10 @@ namespace fields2cover_ros {
       }
       else {
         // TODO later
+        ROS_ERROR("debug");
       }
+
+      ROS_ERROR("fixed_pattern_plan size: %d", int(fixed_pattern_plan.size()));
     }
     //----------------------------------------------------------
     // save plan
@@ -179,16 +182,6 @@ namespace fields2cover_ros {
 
   void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
 
-    // getCovWidth/setCovWidth: get/set the coverage width of the robot, 
-    // also called operational width. 
-    // This parameter defines the width of the swaths in the field.
-    robot_.setCovWidth(config.operational_width);
-
-    // getMinTurningRadius/setMinTurningRadius and getMaxCurv/setMaxCurv: get/set the minimum turning radius or the maximum curvature, 
-    // respectively. Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
-    if (config.turn_radius != 0.0) {
-      robot_.setMaxCurv(1.0 / config.turn_radius);
-    }
     //========================================================
     // spiral params
     //========================================================
@@ -213,6 +206,17 @@ namespace fields2cover_ros {
     //========================================================
     m_u_path_         = config.u_path;
 
+    // getCovWidth/setCovWidth: get/set the coverage width of the robot, 
+    // also called operational width. 
+    // This parameter defines the width of the swaths in the field.
+    robot_.setCovWidth(config.operational_width);
+
+    // getMinTurningRadius/setMinTurningRadius and getMaxCurv/setMaxCurv: get/set the minimum turning radius or the maximum curvature, 
+    // respectively. Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
+    if (config.turn_radius != 0.0) {
+      robot_.setMaxCurv(1.0 / config.turn_radius);
+    }
+
     m_swath_angle_    = config.swath_angle;
     m_headland_width_ = config.headland_width;
     automatic_angle_  = config.automatic_angle;
@@ -221,9 +225,14 @@ namespace fields2cover_ros {
     opt_route_type_   = config.route_type;
     reverse_u_path_   = config.upath_reversed;
     //========================================================
-    // flag for polyline connection btween spiral path and upath
-    merge_path_ = config.merge_path;
+    // common params
+    //========================================================
 
+    merge_path_       = config.merge_path;
+    m_save_path_path_ = config.save_path;
+
+    //========================================================
+    // path generation
     publish_topics();
   }
 
