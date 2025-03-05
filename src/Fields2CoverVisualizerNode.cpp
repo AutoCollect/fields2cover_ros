@@ -14,6 +14,8 @@
 #include <omp.h>        // OpenMP is enabled
 #include <geodesy/utm.h>
 
+#include <Eigen/Geometry>
+
 #include <fields2cover_ros/F2CConfig.h>
 
 #include <dynamic_reconfigure/server.h>
@@ -829,11 +831,12 @@ namespace fields2cover_ros {
       if (segment_length < 1e-6)
         continue;  // Skip if the segment is too short
   
-      // Compute the yaw (orientation) for the current segment
+      // Compute the yaw for the current segment
       double current_yaw = std::atan2(dy, dx);
+      // Convert the yaw into a quaternion using Eigen
+      Eigen::Quaterniond q_start(Eigen::AngleAxisd(current_yaw, Eigen::Vector3d::UnitZ()));
   
-      // If available, get the next segment's yaw for smooth orientation blending.
-      // Otherwise, use the current yaw.
+      // Determine the target orientation using the next segment (if available)
       double next_yaw = current_yaw;
       if (i < path.size() - 2) {
         const geometry_msgs::Point& next_point = path[i + 2];
@@ -841,15 +844,14 @@ namespace fields2cover_ros {
         double dy_next = next_point.y - end.y;
         next_yaw = std::atan2(dy_next, dx_next);
       }
+      Eigen::Quaterniond q_end(Eigen::AngleAxisd(next_yaw, Eigen::Vector3d::UnitZ()));
   
-      // Normalize the angular difference between the current and next yaw to the range [–π, π]
+      // Compute step counts for position and orientation interpolation
+      // (angular difference is still used to choose an appropriate number of steps)
       double delta_yaw = next_yaw - current_yaw;
-      while (delta_yaw > M_PI)
-        delta_yaw -= 2 * M_PI;
-      while (delta_yaw < -M_PI)
-        delta_yaw += 2 * M_PI;
+      while (delta_yaw > M_PI)  delta_yaw -= 2 * M_PI;
+      while (delta_yaw < -M_PI) delta_yaw += 2 * M_PI;
   
-      // Compute the number of steps required for position and orientation separately.
       int steps_pos = std::ceil(segment_length / m_interp_dist_step_);
       int steps_ang = (std::fabs(delta_yaw) > 1e-6) ? std::ceil(std::fabs(delta_yaw) / m_interp_angular_step_) : 1;
       int steps = std::max(steps_pos, steps_ang);
@@ -859,13 +861,15 @@ namespace fields2cover_ros {
       if (i == 0) {
         geometry_msgs::PoseStamped ps;
         ps.pose.position = start;
-        ps.pose.orientation = tf::createQuaternionMsgFromYaw(current_yaw);
+        // Convert Eigen::Quaterniond to tf2::Quaternion
+        tf2::Quaternion tf_q_start(q_start.x(), q_start.y(), q_start.z(), q_start.w());
+        // Now convert to a geometry_msgs::Quaternion message
+        ps.pose.orientation = tf2::toMsg(tf_q_start);
         fixed_pattern_plan.push_back(ps);
       }
   
       // Interpolate along the segment.
-      // For each interpolation step, compute a linear interpolation (for position)
-      // and (if not at the end of the path) a smooth interpolation of orientation.
+      // For each step, compute linear interpolation for position and slerp for orientation.
       for (int step = 1; step <= steps; ++step) {
         double t = static_cast<double>(step) / steps;
         geometry_msgs::PoseStamped ps;
@@ -873,22 +877,17 @@ namespace fields2cover_ros {
         ps.pose.position.y = start.y + t * dy;
         ps.pose.position.z = start.z + t * dz;
   
-        double interp_yaw = current_yaw;
-        // Only interpolate orientation if a next segment exists (i.e. at a turning point)
-        if (i < path.size() - 2) {
-          interp_yaw = current_yaw + t * delta_yaw;
-          while (interp_yaw > M_PI)
-            interp_yaw -= 2 * M_PI;
-          while (interp_yaw < -M_PI)
-            interp_yaw += 2 * M_PI;
-        }
-        ps.pose.orientation = tf::createQuaternionMsgFromYaw(interp_yaw);
-  
+        // Use slerp to smoothly interpolate between q_start and q_end
+        Eigen::Quaterniond q_interp = q_start.slerp(t, q_end);
+        // Convert Eigen::Quaterniond to tf2::Quaternion
+        tf2::Quaternion tf_q_interp(q_interp.x(), q_interp.y(), q_interp.z(), q_interp.w());
+        // Now convert to a geometry_msgs::Quaternion message
+        ps.pose.orientation = tf2::toMsg(tf_q_interp);
         fixed_pattern_plan.push_back(ps);
       }
     }
-
-    // publish topics
+  
+    // Publish topics (assumes publishFixedPatternWayPoints is defined elsewhere)
     publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
 
     return fixed_pattern_plan;
