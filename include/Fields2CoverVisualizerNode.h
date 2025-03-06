@@ -178,7 +178,11 @@ namespace fields2cover_ros {
       // Other Param
       //===================================================
       /// flag for path merge
-      bool  m_active_merge_path_ {false}; ///< flag for polyline connection btween spiral path and upath
+      bool  m_active_merge_path_   {false}; ///< flag for polyline connection btween spiral path and upath
+      
+      bool  m_active_smooth_path_  {false}; ///< flag for path smooth before interpolation
+
+      bool  m_active_reverse_path_ {false}; ///< final path reverse flag
 
       /**
        * @brief generate fields 3D/2D contour and headland
@@ -222,6 +226,13 @@ namespace fields2cover_ros {
        * @return ros points std::vector<geometry_msgs::Point>.
        */
       std::vector<geometry_msgs::Point> convertToRosPoints(const ToolPolyline& toolPolyline);
+
+      /**
+       * @brief smooth waypoints
+       * @param path std::vector<geometry_msgs::Point>.
+       * @return waypoints.
+       */
+      std::vector<geometry_msgs::Point> smoothWaypoints(const std::vector<geometry_msgs::Point>& path);
 
       /**
        * @brief interpolate waypoints

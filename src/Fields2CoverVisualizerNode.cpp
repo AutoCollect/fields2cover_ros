@@ -151,38 +151,57 @@ namespace fields2cover_ros {
   void VisualizerNode::processPaths() {
 
     //----------------------------------------------------------
-    // define plan
+    // define plan cache
+    //----------------------------------------------------------
+    std::vector<geometry_msgs::Point> path;
     std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
     //----------------------------------------------------------
-    // interpolate paths
+    // merge paths
     //----------------------------------------------------------
     if (!m_spiral_path_.empty() && !m_uturn_path_.empty() && !m_transition_path_.empty()) {
-      std::vector<geometry_msgs::Point> path;
       // append all paths
       // A.insert(A.end(), B.begin(), B.end());
       path.insert(path.end(),     m_spiral_path_.begin(),     m_spiral_path_.end());
       path.insert(path.end(), m_transition_path_.begin(), m_transition_path_.end());
       path.insert(path.end(),      m_uturn_path_.begin(),      m_uturn_path_.end());
-      fixed_pattern_plan = interpolateWaypoints(path);
-      path.clear();
       ROS_ERROR("[Debug] multi_headlands_path");
     }
     else if (!m_spiral_path_.empty() && m_uturn_path_.empty() && m_transition_path_.empty()) {
-      fixed_pattern_plan = interpolateWaypoints(m_spiral_path_);
+      path = m_spiral_path_;
       ROS_ERROR("[Debug] publish spiral_path");
     }
     else if (m_spiral_path_.empty() && !m_uturn_path_.empty() && m_transition_path_.empty()) {
-      fixed_pattern_plan = interpolateWaypoints(m_uturn_path_);
+      path = m_uturn_path_;
       ROS_ERROR("[Debug] publish uturn_path");
     }
     else {
-      std::vector<geometry_msgs::PoseStamped> empty_plan;
-      publishFixedPatternWayPoints(empty_plan, fixed_pattern_plan_pose_array_pub_);  
       ROS_ERROR("[Debug] publish an empty plan inside m_save_path");
     }
-
+    //----------------------------------------------------------
+    // smooth path
+    //----------------------------------------------------------
+    if (m_active_smooth_path_) {
+      path = smoothWaypoints(path);
+    }
+    //----------------------------------------------------------
+    // interpolate path
+    //----------------------------------------------------------
+    fixed_pattern_plan = interpolateWaypoints(path);
+    //----------------------------------------------------------
+    // reverse path
+    //----------------------------------------------------------
+    if (m_active_reverse_path_) {
+      for (auto& wpt : fixed_pattern_plan) {
+        reverseOrientation(wpt);
+      }
+      std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
+      ROS_ERROR("reverse path");
+    }
+    //----------------------------------------------------------
+    // publish final path
+    //----------------------------------------------------------
+    publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
     ROS_ERROR("fixed_pattern_plan size: %d", int(fixed_pattern_plan.size()));
-
     //----------------------------------------------------------
     // save plan
     //----------------------------------------------------------
@@ -191,6 +210,7 @@ namespace fields2cover_ros {
     }
     //----------------------------------------------------------
     fixed_pattern_plan.clear();
+    path.clear();
   }
 
 
@@ -242,8 +262,10 @@ namespace fields2cover_ros {
     // common params
     //========================================================
 
-    m_active_merge_path_ = config.merge_path;
-    m_save_path_         = config.save_path;
+    m_active_merge_path_   = config.merge_path;
+    m_save_path_           = config.save_path;
+    m_active_smooth_path_  = config.smooth_path;
+    m_active_reverse_path_ = config.reverse_path;
 
     //========================================================
     // path generation
@@ -815,6 +837,13 @@ namespace fields2cover_ros {
   }
 
 
+  std::vector<geometry_msgs::Point> VisualizerNode::smoothWaypoints(const std::vector<geometry_msgs::Point>& path) {
+    std::vector<geometry_msgs::Point> pathSmoothed;
+
+    return pathSmoothed;
+  }
+
+
   /*
   * interpolateWaypoints
   *
@@ -832,6 +861,10 @@ namespace fields2cover_ros {
   */
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const std::vector<geometry_msgs::Point>& path) {
     std::vector<geometry_msgs::PoseStamped> poses;
+
+    if (path.empty())
+      return poses;
+
     // Reserve an estimated capacity to avoid multiple reallocations.
     poses.reserve(path.size() * 4);
 
@@ -954,7 +987,7 @@ namespace fields2cover_ros {
     // ---------------------------------------------------------------------------
     // Optional: Publish the final set of interpolated waypoints.
     // This can be useful for visualization or debugging.
-    publishFixedPatternWayPoints(final_poses, fixed_pattern_plan_pose_array_pub_);
+    // publishFixedPatternWayPoints(final_poses, fixed_pattern_plan_pose_array_pub_);
 
     // Return the final, densely interpolated pose sequence.
     return final_poses;
