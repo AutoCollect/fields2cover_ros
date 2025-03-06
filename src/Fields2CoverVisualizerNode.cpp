@@ -186,10 +186,11 @@ namespace fields2cover_ros {
     //----------------------------------------------------------
     // save plan
     //----------------------------------------------------------
-    // if (m_save_path_) {
-    //   savePath(fixed_pattern_plan);
-    // }
-
+    if (m_save_path_ && !fixed_pattern_plan.empty()) {
+      // savePath(fixed_pattern_plan);
+    }
+    //----------------------------------------------------------
+    fixed_pattern_plan.clear();
   }
 
 
@@ -831,18 +832,19 @@ namespace fields2cover_ros {
   */
   std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const std::vector<geometry_msgs::Point>& path) {
     std::vector<geometry_msgs::PoseStamped> poses;
+    // Reserve an estimated capacity to avoid multiple reallocations.
+    poses.reserve(path.size() * 4);
 
-    // Check if the input path has enough points to perform interpolation
+    // Check if the input path has enough points to perform interpolation.
     if (path.size() < 2)
       return poses;  // Not enough points to form a valid path
 
     // ---------------------------------------------------------------------------
     // 1. Position Interpolation:
     // ---------------------------------------------------------------------------
-    // For every segment between consecutive path points, generate intermediate points such that
-    // the distance between any two successive points is <= m_interp_dist_step_.
+    // For each segment between consecutive path points, generate intermediate positions
+    // so that the distance between any two successive points is <= m_interp_dist_step_.
     for (size_t i = 0; i < path.size() - 1; ++i) {
-      // Retrieve the start and end points for the current segment.
       const geometry_msgs::Point& start = path[i];
       const geometry_msgs::Point& end   = path[i + 1];
 
@@ -854,11 +856,10 @@ namespace fields2cover_ros {
       // Calculate the Euclidean distance of the segment.
       double seg_length = std::sqrt(dx * dx + dy * dy + dz * dz);
       if (seg_length < 1e-6)
-        continue;  // Skip degenerate segments with negligible length
+        continue;  // Skip degenerate segments
 
-      // Determine the number of steps required such that each segment is no longer than m_interp_dist_step_.
-      int num_steps = std::ceil(seg_length / m_interp_dist_step_);
-      num_steps = std::max(num_steps, 1);
+      // Determine the number of steps (at least 1) needed so that each segment is no longer than m_interp_dist_step_.
+      int num_steps = std::max(static_cast<int>(std::ceil(seg_length / m_interp_dist_step_)), 1);
 
       // For the very first segment, add the starting point to the pose vector.
       if (i == 0) {
@@ -881,44 +882,42 @@ namespace fields2cover_ros {
     // ---------------------------------------------------------------------------
     // 2. Orientation Assignment:
     // ---------------------------------------------------------------------------
-    // For every interpolated pose (except the last one), set its orientation so that it "faces"
-    // the next pose. This is done by computing the yaw angle based on the difference between
-    // the current position and the next position.
-    for (size_t i = 0; i < poses.size() - 1; i++) {
-      // Retrieve current and next positions.
+    // Precompute yaw angles for all poses and assign orientations so that each pose “faces”
+    // the next one. This avoids re-calling tf::getYaw repeatedly later.
+    std::vector<double> yaws;
+    yaws.resize(poses.size());
+    for (size_t i = 0; i < poses.size() - 1; ++i) {
+      // Compute yaw based on the vector from the current position to the next.
       const geometry_msgs::Point& cur = poses[i].pose.position;
       const geometry_msgs::Point& nxt = poses[i + 1].pose.position;
-
-      // Compute the yaw angle using atan2 (result in radians).
-      double yaw = std::atan2(nxt.y - cur.y, nxt.x - cur.x);
+      yaws[i] = std::atan2(nxt.y - cur.y, nxt.x - cur.x);
 
       // Create a quaternion from the computed yaw (roll and pitch are zero).
       tf2::Quaternion q;
-      q.setRPY(0, 0, yaw);
-
-      // Convert the quaternion into a geometry_msgs::Quaternion message.
+      q.setRPY(0, 0, yaws[i]);
       poses[i].pose.orientation = tf2::toMsg(q);
     }
-    // For the final pose, copy the previous pose's orientation.
+    // For the last pose, copy the previous pose's orientation.
     if (poses.size() > 1) {
+      yaws.back() = yaws[poses.size() - 2];
       poses.back().pose.orientation = poses[poses.size() - 2].pose.orientation;
     }
 
     // ---------------------------------------------------------------------------
     // 3. Angular Interpolation:
     // ---------------------------------------------------------------------------
-    // Check the angular difference (yaw) between consecutive poses.
-    // If the yaw difference exceeds m_interp_angular_step_, add extra poses
-    // with interpolated orientations (and positions) until the difference is within the allowed threshold.
+    // Ensure that the yaw difference between consecutive poses is within m_interp_angular_step_.
+    // If not, insert additional poses with interpolated orientations and positions.
     std::vector<geometry_msgs::PoseStamped> final_poses;
+    // Reserve extra capacity to reduce reallocations during intermediate insertions.
+    final_poses.reserve(poses.size() * 2);
     final_poses.push_back(poses[0]);  // Start with the first pose
 
     for (size_t i = 0; i < poses.size() - 1; ++i) {
-      // Extract current yaw and next yaw using tf::getYaw (from tf/transform_datatypes.h)
-      double yaw_current = tf::getYaw(poses[i].pose.orientation);
-      double yaw_next = tf::getYaw(poses[i + 1].pose.orientation);
+      double yaw_current = yaws[i];
+      double yaw_next = yaws[i + 1];
 
-      // Compute the yaw difference.
+      // Compute the yaw difference and normalize it to the interval (-pi, pi].
       double d_yaw = yaw_next - yaw_current;
       // Normalize the yaw difference to the interval (-pi, pi]
       while (d_yaw > M_PI)
