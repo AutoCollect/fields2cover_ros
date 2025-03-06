@@ -21,7 +21,7 @@ void sigintHandler(int)
 {
   ROS_INFO("CTRL-C pressed. Calling saveMap()...");
   if (g_visualizer_node) {
-    // g_visualizer_node->saveMap();
+    g_visualizer_node->saveMap();
   }
   // Now shutdown ROS
   ros::shutdown();

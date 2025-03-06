@@ -182,6 +182,9 @@ namespace fields2cover_ros {
       
       bool  m_active_smooth_path_  {false}; ///< flag for path smooth before interpolation
 
+      double m_correction_weight_ = 0.5;
+      int    m_iterations_num_    = 10;
+
       bool  m_active_reverse_path_ {false}; ///< final path reverse flag
 
       /**

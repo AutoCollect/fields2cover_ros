@@ -206,7 +206,7 @@ namespace fields2cover_ros {
     // save plan
     //----------------------------------------------------------
     if (m_save_path_ && !fixed_pattern_plan.empty()) {
-      // savePath(fixed_pattern_plan);
+      savePath(fixed_pattern_plan);
     }
     //----------------------------------------------------------
     fixed_pattern_plan.clear();
@@ -265,6 +265,8 @@ namespace fields2cover_ros {
     m_active_merge_path_   = config.merge_path;
     m_save_path_           = config.save_path;
     m_active_smooth_path_  = config.smooth_path;
+    m_iterations_num_      = config.iterations;
+    m_correction_weight_   = config.correction_weight;
     m_active_reverse_path_ = config.reverse_path;
 
     //========================================================
@@ -835,14 +837,103 @@ namespace fields2cover_ros {
                    });
     return rosPoints;
   }
-
-
+  
   std::vector<geometry_msgs::Point> VisualizerNode::smoothWaypoints(const std::vector<geometry_msgs::Point>& path) {
-    std::vector<geometry_msgs::Point> pathSmoothed;
-
-    return pathSmoothed;
+    // 1. Remove redundant points
+    // If the path is empty, or has fewer than 3 points, no smoothing is needed.
+    if (path.size() < 3)
+      return path;
+    
+    std::vector<geometry_msgs::Point> cleanPath;
+    cleanPath.reserve(path.size());
+    cleanPath.push_back(path[0]);
+    // Define a threshold distance below which points are considered redundant.
+    const double threshold = 1e-3; // e.g., 0.001 units (adjust as needed)
+    
+    for (size_t i = 1; i < path.size(); ++i) {
+      const geometry_msgs::Point& pt = path[i];
+      const geometry_msgs::Point& last = cleanPath.back();
+      double dx = pt.x - last.x;
+      double dy = pt.y - last.y;
+      double dz = pt.z - last.z;
+      if (std::sqrt(dx * dx + dy * dy + dz * dz) > threshold)
+        cleanPath.push_back(pt);
+    }
+    if (cleanPath.size() < 3)
+      return cleanPath;
+    
+    // 2. Apply CCMA smoothing on the cleaned path.
+    // Use member variables m_iterations_num_ and m_correction_weight_ for tuning.
+    std::vector<geometry_msgs::Point> newPath = cleanPath;
+    const size_t n = newPath.size();
+    std::vector<geometry_msgs::Point> tempPath(n);
+    
+    for (int iter = 0; iter < m_iterations_num_; ++iter) {
+      // Preserve endpoints.
+      tempPath[0] = newPath[0];
+      tempPath[n - 1] = newPath[n - 1];
+      
+      // Process intermediate points.
+      #ifdef _OPENMP
+      #pragma omp parallel for
+      #endif
+      for (int i = 1; i < static_cast<int>(n) - 1; ++i) {
+        const geometry_msgs::Point& prev = newPath[i - 1];
+        const geometry_msgs::Point& curr = newPath[i];
+        const geometry_msgs::Point& next = newPath[i + 1];
+        
+        // Compute the midpoint between the neighboring points.
+        double midx = (prev.x + next.x) * 0.5;
+        double midy = (prev.y + next.y) * 0.5;
+        double midz = (prev.z + next.z) * 0.5;
+        
+        // Compute vectors for curvature estimation (using x and y dimensions).
+        double v1x = curr.x - prev.x;
+        double v1y = curr.y - prev.y;
+        double v2x = next.x - curr.x;
+        double v2y = next.y - curr.y;
+        
+        double norm1_sq = v1x * v1x + v1y * v1y;
+        double norm2_sq = v2x * v2x + v2y * v2y;
+        
+        // If either segment is extremely short, skip updating.
+        if (norm1_sq < 1e-12 || norm2_sq < 1e-12) {
+          tempPath[i] = curr;
+          continue;
+        }
+        
+        double norm1 = std::sqrt(norm1_sq);
+        double norm2 = std::sqrt(norm2_sq);
+        
+        // Compute the turning angle using the dot product.
+        double dot = v1x * v2x + v1y * v2y;
+        double cos_angle = dot / (norm1 * norm2);
+        // Clamp cos_angle to [-1, 1] to avoid numerical issues.
+        if (cos_angle > 1.0)  cos_angle = 1.0;
+        if (cos_angle < -1.0) cos_angle = -1.0;
+        double angle = std::acos(cos_angle);
+        
+        // Compute the distance between the neighboring points (using x and y).
+        double dx = next.x - prev.x;
+        double dy = next.y - prev.y;
+        double dist = std::sqrt(dx * dx + dy * dy);
+        
+        // Approximate curvature as turning angle divided by distance.
+        double curvature = (dist > 1e-6) ? angle / dist : 0.0;
+        // Compute the correction weight (gamma) scaled by curvature.
+        double gamma = (m_correction_weight_ * curvature < 1.0) ? m_correction_weight_ * curvature : 1.0;
+        
+        // Update the current point by blending its position with the midpoint.
+        tempPath[i].x = (1.0 - gamma) * curr.x + gamma * midx;
+        tempPath[i].y = (1.0 - gamma) * curr.y + gamma * midy;
+        tempPath[i].z = (1.0 - gamma) * curr.z + gamma * midz;
+      }
+      newPath.swap(tempPath);
+    }
+    
+    return newPath;
   }
-
+    
 
   /*
   * interpolateWaypoints
