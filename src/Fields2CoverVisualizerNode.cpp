@@ -4,29 +4,31 @@
 //                        BSD-3 License
 //=============================================================================
 
-
-#include "Fields2CoverVisualizerNode.h"
-#include "ros/conversor.h"
-
 #include <fstream>
 #include <iostream>
 
 #include <sys/stat.h>   // For stat()
 #include <cstdio>       // For remove()
 
+#include <nlohmann/json.hpp>
+#include <omp.h>        // OpenMP is enabled
+#include <geodesy/utm.h>
+
+#include <Eigen/Geometry>
+
 #include <fields2cover_ros/F2CConfig.h>
 
 #include <dynamic_reconfigure/server.h>
-#include <nav_msgs/Path.h> // for fixed pattern plan topic publish
-#include <geometry_msgs/PoseArray.h>
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_geometry_msgs/tf2_geometry_msgs.h>  // for converting quaternions
 #include <tf2_ros/transform_listener.h>
 
-#include <geodesy/utm.h>
-#include <geometry_msgs/Point.h>
+#include <nav_msgs/Path.h> // for fixed pattern plan topic publish
+#include <geometry_msgs/PoseArray.h>
+#include <visualization_msgs/MarkerArray.h>
 
-#include <nlohmann/json.hpp>
+#include "Fields2CoverVisualizerNode.h"
+#include "ros/conversor.h"
 
 using json = nlohmann::json;
 using namespace std;
@@ -34,17 +36,22 @@ using namespace std;
 namespace fields2cover_ros {
     
   void VisualizerNode::init_VisualizerNode() {
-    field_polygon_publisher_      = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/border",       1, true);
-    field_2d_border_publisher_    = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/border_2d",    1, true);
 
-    field_no_headlands_publisher_ = public_node_handle_.advertise<geometry_msgs::PolygonStamped>("/field/no_headlands", 1, true);
-    field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::Marker>   ("/field/swaths",       1, true);
+    field_contour_publisher_      = public_node_handle_.advertise<visualization_msgs::MarkerArray>("/field/contours",     10, true);
+
+    field_swaths_publisher_       = public_node_handle_.advertise<visualization_msgs::MarkerArray>("/field/swaths",       10, true);
+
+    // publisher merge paths connection
+    merge_paths_publisher_        = public_node_handle_.advertise<visualization_msgs::Marker>     ("/field/merge_path",   10, true);
 
     // Publisher for PoseArray
     fixed_pattern_plan_pose_array_pub_ = public_node_handle_.advertise<geometry_msgs::PoseArray>("/waypoints", 10, true);
 
     // Publisher for the occupancy grid map
     map_pub_ = public_node_handle_.advertise<nav_msgs::OccupancyGrid>("/map", 1, true);
+
+    // Subscriber
+    odom_sub_ = public_node_handle_.subscribe("/odom_global", 10, &VisualizerNode::odomCallback, this);
 
     //----------------------------------------------------------
     // field file
@@ -91,9 +98,1173 @@ namespace fields2cover_ros {
       gps2map_transform_ = transformGPStoMap(gps_point);
     }
     //----------------------------------------------------------
-    robot_.cruise_speed = 2.0;
-    robot_.setMinRadius(2.0);
-    double headland_width = 3.0*robot_.op_width;
+    // F2CRobot
+    //----------------------------------------------------------
+    // getCruiseVel/setCruiseVel: get/set the speed of the vehicle when traveling through the field.
+    robot_.setCruiseVel(2.0);
+    // getTurnVel/setTurnVel: get/set the speed of the vehicle when making turns or going through the headlands.
+    // robot_.setTurnVel(0.5);
+    // getMinTurningRadius/setMinTurningRadius and getMaxCurv/setMaxCurv: 
+    // get/set the minimum turning radius or the maximum curvature, respectively. 
+    // Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
+    robot_.setMaxCurv(1 / 3.0); // 1 / radius: 1 / 3 m = 0.5
+    //----------------------------------------------------------
+    // create a new ToolpathGenerator object
+    tp_gen_ = new ToolpathGenerator();
+  }
+
+
+  void VisualizerNode::publish_topics(void) {
+
+    //----------------------------------------------------------
+    // clear temp paths cache
+    //----------------------------------------------------------
+    m_spiral_path_.clear();
+    m_uturn_path_.clear();
+    m_transition_path_.clear();
+    std::vector<geometry_msgs::PoseStamped> empty_plan;
+    publishFixedPatternWayPoints(empty_plan, fixed_pattern_plan_pose_array_pub_);
+    //----------------------------------------------------------
+    // define border polygon
+    geometry_msgs::PolygonStamped border_polygon;
+    //----------------------------------------------------------
+    // Field Contour Generation
+    F2CCell no_headlands = generateFieldsContour(fields_, border_polygon);
+    //----------------------------------------------------------
+    // occupancy grid 2D map creation & publish
+    generateGrid(border_polygon);
+    //----------------------------------------------------------
+    // single inward spiral trajectory generation & publish
+    m_spiral_path_ = generateSingleInwardSpiral(border_polygon);
+    //----------------------------------------------------------
+    // clear polygon cache
+    border_polygon.polygon.points.clear();
+    //----------------------------------------------------------
+    // u-turn swaths generation
+    m_uturn_path_ = generateSwaths(no_headlands);
+    //----------------------------------------------------------
+    // generate transition curve for merging spiral path and u_path, then publish
+    m_transition_path_ = mergePaths(m_spiral_path_, m_uturn_path_);
+    //----------------------------------------------------------
+  }
+
+  void VisualizerNode::processPaths() {
+
+    //----------------------------------------------------------
+    // define plan cache
+    //----------------------------------------------------------
+    std::vector<geometry_msgs::Point> path;
+    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
+    //----------------------------------------------------------
+    // merge paths
+    //----------------------------------------------------------
+    if (!m_spiral_path_.empty() && !m_uturn_path_.empty() && !m_transition_path_.empty()) {
+      // append all paths
+      // A.insert(A.end(), B.begin(), B.end());
+      path.insert(path.end(),     m_spiral_path_.begin(),     m_spiral_path_.end());
+      path.insert(path.end(), m_transition_path_.begin(), m_transition_path_.end());
+      path.insert(path.end(),      m_uturn_path_.begin(),      m_uturn_path_.end());
+      ROS_ERROR("[Debug] multi_headlands_path");
+    }
+    else if (!m_spiral_path_.empty() && m_uturn_path_.empty() && m_transition_path_.empty()) {
+      path = m_spiral_path_;
+      ROS_ERROR("[Debug] publish spiral_path");
+    }
+    else if (m_spiral_path_.empty() && !m_uturn_path_.empty() && m_transition_path_.empty()) {
+      path = m_uturn_path_;
+      ROS_ERROR("[Debug] publish uturn_path");
+    }
+    else {
+      ROS_ERROR("[Debug] publish an empty plan inside m_save_path");
+    }
+    //----------------------------------------------------------
+    // smooth path
+    //----------------------------------------------------------
+    if (m_active_smooth_path_) {
+      path = smoothWaypoints(path);
+    }
+    //----------------------------------------------------------
+    // interpolate path
+    //----------------------------------------------------------
+    fixed_pattern_plan = interpolateWaypoints(path);
+    //----------------------------------------------------------
+    // reverse path
+    //----------------------------------------------------------
+    if (m_active_reverse_path_) {
+      for (auto& wpt : fixed_pattern_plan) {
+        reverseOrientation(wpt);
+      }
+      std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
+      ROS_ERROR("reverse path");
+    }
+    //----------------------------------------------------------
+    // publish final path
+    //----------------------------------------------------------
+    publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
+    ROS_ERROR("fixed_pattern_plan size: %d", int(fixed_pattern_plan.size()));
+    //----------------------------------------------------------
+    // save plan
+    //----------------------------------------------------------
+    if (m_save_path_ && !fixed_pattern_plan.empty()) {
+      savePath(fixed_pattern_plan);
+    }
+    //----------------------------------------------------------
+    fixed_pattern_plan.clear();
+    path.clear();
+  }
+
+
+  void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
+
+    //========================================================
+    // spiral params
+    //========================================================
+    m_active_spiral_path_ = config.spiral_path;
+    m_spiral_trim_num_    = config.spiral_trim_num;
+
+    // set spiral offset
+    tp_gen_->setContourOffset      (config.spiral_headland_width);
+    tp_gen_->setOperationWidth     (config.operational_width);
+    tp_gen_->setMaxOffsets         (config.spiral_offset_num);
+    tp_gen_->setContourResampleStep(config.resample_step);
+    tp_gen_->setSpiralReversed     (config.spiral_reversed);
+    tp_gen_->setReferenceOffset    (config.reference_offset);
+
+    // Use the cached odometry data to set the spiral entry point
+    double x = latest_odom_.pose.pose.position.x;
+    double y = latest_odom_.pose.pose.position.y;
+    tp_gen_->setSpiralEntryPoint(ToolPoint{x, y});
+    // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
+    //========================================================
+    // upath params
+    //========================================================
+    m_active_u_path_ = config.u_path;
+
+    // getCovWidth/setCovWidth: get/set the coverage width of the robot, 
+    // also called operational width. 
+    // This parameter defines the width of the swaths in the field.
+    robot_.setCovWidth(config.operational_width);
+
+    // getMinTurningRadius/setMinTurningRadius and getMaxCurv/setMaxCurv: get/set the minimum turning radius or the maximum curvature, 
+    // respectively. Both are saved as the same parameter, as maximum curvature is the inverse of the minimum turning radius.
+    if (config.turn_radius != 0.0) {
+      robot_.setMaxCurv(1.0 / config.turn_radius);
+    }
+
+    m_swath_angle_    = config.swath_angle;
+    m_headland_width_ = config.headland_width;
+    automatic_angle_  = config.automatic_angle;
+    sg_objective_     = config.sg_objective;
+    opt_turn_type_    = config.turn_type;
+    opt_route_type_   = config.route_type;
+    reverse_u_path_   = config.upath_reversed;
+    //========================================================
+    // common params
+    //========================================================
+
+    m_active_merge_path_   = config.merge_path;
+    m_save_path_           = config.save_path;
+    m_active_smooth_path_  = config.smooth_path;
+    m_iterations_num_      = config.iterations;
+    m_correction_weight_   = config.correction_weight;
+    m_active_reverse_path_ = config.reverse_path;
+
+    //========================================================
+    // path generation
+    if (!m_save_path_) {
+      publish_topics();
+    }
+    else {
+      processPaths();
+    }
+  }
+
+  F2CCell VisualizerNode::generateFieldsContour(const F2CFields& fields,
+                                                geometry_msgs::PolygonStamped& border_polygon) {
+
+    auto f = fields[0].getField().clone();
+    //----------------------------------------------------------
+    // border
+    conversor::ROS::to(f.getCellBorder(0), border_polygon.polygon);
+    transformPoints(gps2map_transform_, border_polygon);
+    //----------------------------------------------------------
+    // headland
+    f2c::hg::ConstHL hl_gen;
+    geometry_msgs::PolygonStamped headland_polygon;
+    F2CCell no_headlands = hl_gen.generateHeadlands(f, m_headland_width_).getGeometry(0);
+    conversor::ROS::to(no_headlands.getGeometry(0), headland_polygon.polygon);
+    transformPoints(gps2map_transform_, headland_polygon);
+    //----------------------------------------------------------
+    // publish contours
+    visualization_msgs::MarkerArray marker_array;
+
+    // --- Create border_3d contour ---
+
+    visualization_msgs::Marker border_3d;
+    border_3d.header.frame_id = frame_id_;
+    border_3d.ns = "border_3d_contour";
+    border_3d.id = 0;
+    border_3d.header.stamp = ros::Time::now();
+    border_3d.action = visualization_msgs::Marker::ADD;
+    border_3d.pose.orientation.w = 1.0;
+    // border_3d.type = visualization_msgs::Marker::LINE_STRIP;
+    border_3d.type = visualization_msgs::Marker::POINTS;
+    border_3d.scale.x = 0.5;
+    border_3d.scale.y = 0.5;
+    border_3d.scale.z = 0.1;
+
+    border_3d.color.r = 0.0;   // Red
+    border_3d.color.g = 0.0;   // Green
+    border_3d.color.b = 1.0;   // Blue (adjust to get the exact brightness you want)
+    border_3d.color.a = 1.0;   // Full opacity
+
+    // Add points to the marker
+    for (const auto& point : border_polygon.polygon.points) {
+      geometry_msgs::Point p;
+      p.x = point.x;
+      p.y = point.y;
+      p.z = point.z;
+      border_3d.points.push_back(p);
+    }
+
+    // --- Create border_2d contour ---
+
+    visualization_msgs::Marker border_2d;
+    border_2d.header.frame_id = frame_id_; // Change to your frame
+    border_2d.header.stamp = ros::Time::now();
+    border_2d.ns = "border_2d_contour";
+    border_2d.action = visualization_msgs::Marker::ADD;
+    border_2d.pose.orientation.w = 1.0;
+
+    border_2d.id = 1;
+    border_2d.type = visualization_msgs::Marker::LINE_STRIP;
+
+    // Set the line color (RGB + alpha)
+    border_2d.color.r = 1.0;
+    border_2d.color.g = 1.0;
+    border_2d.color.b = 1.0;
+    border_2d.color.a = 1.0;
+
+    // Set the line width
+    border_2d.scale.x = 0.2; // Line width
+
+    // Add points to the marker
+    for (const auto& point : border_polygon.polygon.points) {
+      geometry_msgs::Point p;
+      p.x = point.x;
+      p.y = point.y;
+      p.z = 0.0;
+      border_2d.points.push_back(p);
+    }
+
+    // --- Create headland contour ---
+
+    visualization_msgs::Marker headland_marker;
+    headland_marker.header.frame_id = frame_id_; // Change to your frame
+    headland_marker.header.stamp = ros::Time::now();
+    headland_marker.ns = "headland_marker";
+    headland_marker.action = visualization_msgs::Marker::ADD;
+    headland_marker.pose.orientation.w = 1.0;
+
+    headland_marker.id = 2;
+    headland_marker.type = visualization_msgs::Marker::LINE_STRIP;
+
+    // Set the headland color (RGB + alpha)
+    headland_marker.color.r = 1.0;
+    headland_marker.color.g = 1.0;
+    headland_marker.color.b = 0.0;
+    headland_marker.color.a = 1.0;
+    
+    // Set the line width
+    headland_marker.scale.x = 0.2; // Line width
+
+    // Add points to the marker
+    for (const auto& point : headland_polygon.polygon.points) {
+      geometry_msgs::Point p;
+      p.x = point.x;
+      p.y = point.y;
+      p.z = 0.0;
+      headland_marker.points.push_back(p);
+    }
+
+    //-----------------------------------
+    marker_array.markers.push_back(border_3d);
+    marker_array.markers.push_back(border_2d);
+    marker_array.markers.push_back(headland_marker);
+
+    // publish fields contour and headland
+    field_contour_publisher_.publish(marker_array);
+    //-----------------------------------
+    return no_headlands;
+  }
+
+  std::vector<geometry_msgs::Point> VisualizerNode::generateSwaths(F2CCell no_headlands) {
+
+    if (!m_active_u_path_) {
+      visualization_msgs::MarkerArray delete_all;
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = "map";
+      marker.header.stamp = ros::Time::now();
+      marker.action = visualization_msgs::Marker::DELETEALL;  // DELETEALL action
+      delete_all.markers.push_back(marker);
+      field_swaths_publisher_.publish(delete_all);
+      std::vector<geometry_msgs::Point> empty_upath;
+      return empty_upath;
+    }
+
+    // swaths path generation
+    F2CSwaths swaths;
+    f2c::sg::BruteForce swath_gen;
+    if (automatic_angle_) {
+      switch (sg_objective_) {
+        case 0 : {
+          f2c::obj::SwathLength obj;
+          swaths = swath_gen.generateBestSwaths(obj, robot_.getCovWidth(), no_headlands);
+          break;
+        }
+        case 1 : {
+          f2c::obj::NSwath obj;
+          swaths = swath_gen.generateBestSwaths(obj, robot_.getCovWidth(), no_headlands);
+          break;
+        }
+        case 2 : {
+          f2c::obj::FieldCoverage obj;
+          swaths = swath_gen.generateBestSwaths(obj, robot_.getCovWidth(), no_headlands);
+          break;
+        }
+      }
+    }
+    else {
+      swaths = swath_gen.generateSwaths(m_swath_angle_, robot_.getCovWidth(), no_headlands);
+    }
+
+    F2CSwaths route;
+    switch (opt_route_type_) {
+      case 0 : {
+        f2c::rp::BoustrophedonOrder swath_sorter;
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+      case 1 : {
+        f2c::rp::SnakeOrder swath_sorter;
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+      case 2 : {
+        f2c::rp::SpiralOrder swath_sorter(6);
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+      case 3 : {
+        f2c::rp::SpiralOrder swath_sorter(4);
+        route = swath_sorter.genSortedSwaths(swaths);
+        break;
+      }
+    }
+
+    F2CPath path;
+    f2c::pp::PathPlanning path_planner;
+
+    switch(opt_turn_type_) {
+      case 0 : {
+        f2c::pp::DubinsCurves turn;
+        path = path_planner.planPath(robot_, route, turn);
+        break;
+      }
+      case 1 : {
+        f2c::pp::DubinsCurvesCC turn;
+        path = path_planner.planPath(robot_, route, turn);
+        break;
+      }
+      case 2 : {
+        f2c::pp::ReedsSheppCurves turn;
+        path = path_planner.planPath(robot_, route, turn);
+        break;
+      }
+      case 3 : {
+        f2c::pp::ReedsSheppCurvesHC turn;
+        path = path_planner.planPath(robot_, route, turn);
+        break;
+      }
+    }
+
+    visualization_msgs::MarkerArray marker_array;
+
+    // --- Create  upath  ---
+    visualization_msgs::Marker marker_swaths;
+    marker_swaths.header.frame_id = frame_id_;
+    marker_swaths.ns = "upath";
+    marker_swaths.id = 0;
+    marker_swaths.header.stamp = ros::Time::now();
+    marker_swaths.action = visualization_msgs::Marker::ADD;
+    marker_swaths.pose.orientation.w = 1.0;
+    marker_swaths.type = visualization_msgs::Marker::LINE_STRIP;
+    // marker_swaths.type = visualization_msgs::Marker::POINTS;
+    marker_swaths.scale.x = 0.5;
+    marker_swaths.scale.y = 0.5;
+    marker_swaths.scale.z = 0.1;
+
+    marker_swaths.color.r = 0.0;   // Red
+    marker_swaths.color.g = 1.0;   // Green
+    marker_swaths.color.b = 0.0;   // Blue (adjust to get the exact brightness you want)
+    marker_swaths.color.a = 0.5;   // Full opacity
+
+    // Transform each point in the polygon
+    transformPoints(gps2map_transform_, path, marker_swaths);
+
+    // check reverse Upath
+    if (reverse_u_path_) {
+      std::reverse(marker_swaths.points.begin(), marker_swaths.points.end());
+    }
+
+    // --- Create a marker for the first point of upath (blue big point) ---
+    visualization_msgs::Marker first_point_marker;
+    first_point_marker.header.frame_id = frame_id_;
+    first_point_marker.header.stamp = ros::Time::now();
+    first_point_marker.ns = "upath_first_point";
+    first_point_marker.id = 1;
+    // first_point_marker.type = visualization_msgs::Marker::SPHERE;
+    first_point_marker.type   = visualization_msgs::Marker::CUBE;
+    first_point_marker.action = visualization_msgs::Marker::ADD;
+    first_point_marker.pose.orientation.w = 1.0;
+    // Set a larger scale for the sphere (big point)
+    first_point_marker.scale.x = 3.0;
+    first_point_marker.scale.y = 3.0;
+    first_point_marker.scale.z = 3.0;
+    // Set blue color: (R=0, G=0, B=1, A=1)
+    first_point_marker.color.r = 1.0;
+    first_point_marker.color.g = 0.0;
+    first_point_marker.color.b = 0.0;
+    first_point_marker.color.a = 1.0;
+    if (!marker_swaths.points.empty()) {
+      first_point_marker.pose.position.x = marker_swaths.points.front().x;
+      first_point_marker.pose.position.y = marker_swaths.points.front().y;
+      first_point_marker.pose.position.z = 0.0;
+    }
+
+    // --- Create a marker for the last point of upath (red big point) ---
+    visualization_msgs::Marker last_point_marker;
+    last_point_marker.header.frame_id = frame_id_;
+    last_point_marker.header.stamp = ros::Time::now();
+    last_point_marker.ns = "upath_last_point";
+    last_point_marker.id = 2;
+    last_point_marker.type = visualization_msgs::Marker::SPHERE;
+    last_point_marker.action = visualization_msgs::Marker::ADD;
+    last_point_marker.pose.orientation.w = 1.0;
+    // Set a larger scale for the sphere (big point)
+    last_point_marker.scale.x = 3.0;
+    last_point_marker.scale.y = 3.0;
+    last_point_marker.scale.z = 3.0;
+    // Set red color: (R=1, G=0, B=0, A=1)
+    last_point_marker.color.r = 1.0;
+    last_point_marker.color.g = 0.0;
+    last_point_marker.color.b = 0.0;
+    last_point_marker.color.a = 1.0;
+    if (!marker_swaths.points.empty()) {
+      last_point_marker.pose.position.x = marker_swaths.points.back().x;
+      last_point_marker.pose.position.y = marker_swaths.points.back().y;
+      last_point_marker.pose.position.z = 0.0;
+    }
+
+    // --- publish swaths ---
+    marker_array.markers.push_back(marker_swaths);
+    marker_array.markers.push_back(first_point_marker);
+    marker_array.markers.push_back(last_point_marker);
+
+    field_swaths_publisher_.publish(marker_array);
+
+    // --- return ---
+    return std::move(marker_swaths.points);
+  }
+
+
+  std::vector<geometry_msgs::Point> VisualizerNode::generateSingleInwardSpiral(const geometry_msgs::PolygonStamped& contour) {
+
+    if (!m_active_spiral_path_) {
+      tp_gen_->deleteMarkers();
+      std::vector<geometry_msgs::Point> empty_spiral_path;
+      return empty_spiral_path;
+    }
+    else {
+      tp_gen_->deleteMarkers ();
+      //============================================
+      ToolPolyline polygon;
+      for (const auto& point : contour.polygon.points) {
+        polygon.push_back(ToolPoint {point.x, point.y});
+      }
+      std::string name = "Paddock_Test";
+      std::cout << "\n==== Processing Polygon: " << name << " ====\n";
+      //============================================
+      // 1. raw polygon data
+      // tp_gen_->setPolygonName(name);
+      // tp_gen_->setContour(polygon);
+      //============================================
+      // 2. re-generate/re-arrange contour sequence before offset
+      //   a. contour sequence start point is close to the given point
+      //   b. closewise or anti-clockwise direction
+      //--------------------------------------------
+      // tp_gen_->setPolygonName(name);
+      // const ToolPolyline &polygon_contour = 
+      //   tp_gen_->generateContour(polygon.front(), polygon);
+      // tp_gen_->setContour(polygon_contour);
+      //============================================
+      // 3. resampling + relocate
+      tp_gen_->setPolygonName(name);
+      // tp_gen_->setSpiralEntryPoint(ToolPoint{0.0, 0.0});
+      tp_gen_->setContour(polygon);
+      //============================================
+      try {
+          tp_gen_->archimedeanSpiral();
+          tp_gen_->trimSpiralPath(m_spiral_trim_num_);
+          tp_gen_->plotPath();
+      } catch (const std::exception &e) {
+          std::cerr << "Error in processing polygon " << name << ": " << e.what() << "\n";
+      }
+
+      // --- return ---
+      return convertToRosPoints(tp_gen_->getEntrySpiral());
+    }
+  }
+
+  std::vector<geometry_msgs::Point> VisualizerNode::mergePaths(
+                                  const std::vector<geometry_msgs::Point>& spiral_path, 
+                                  const std::vector<geometry_msgs::Point>& uturn_path) {
+
+    std::vector<geometry_msgs::Point> transitionCurve;
+
+    if (m_active_spiral_path_ && m_active_u_path_ && m_active_merge_path_) {
+
+      transitionCurve = computeTransitionCurve(spiral_path, uturn_path);
+
+      // create a merge marker
+      visualization_msgs::Marker merge_paths_marker;
+      merge_paths_marker.header.frame_id = frame_id_; // Change to your frame
+      merge_paths_marker.header.stamp = ros::Time::now();
+      merge_paths_marker.ns = "merge_marker";
+      merge_paths_marker.action = visualization_msgs::Marker::ADD;
+      merge_paths_marker.type = visualization_msgs::Marker::LINE_STRIP;
+      merge_paths_marker.pose.orientation.w = 1.0;
+      merge_paths_marker.id = 0;
+
+      // Set the line width
+      merge_paths_marker.scale.x = 0.5; // Line width
+
+      // Set the line color (RGB yellow + alpha)
+      merge_paths_marker.color.r = 1.0;
+      merge_paths_marker.color.g = 0.0;
+      merge_paths_marker.color.b = 1.0;
+      merge_paths_marker.color.a = 1.0;
+
+      // Add point to the marker
+      merge_paths_marker.points = transitionCurve;
+
+      // publish merge marker
+      merge_paths_publisher_.publish(merge_paths_marker);
+    }
+    else {
+      visualization_msgs::Marker marker;
+      marker.header.frame_id = "map";
+      marker.header.stamp = ros::Time::now();
+      marker.action = visualization_msgs::Marker::DELETEALL;
+      merge_paths_publisher_.publish(marker);
+    }
+
+    return transitionCurve;
+  }
+
+  // Helper function: generate a cubic Bézier curve given 4 control points and a desired resolution.
+  std::vector<geometry_msgs::Point> VisualizerNode::generateBezierCurve(const geometry_msgs::Point& p0,
+                                                                        const geometry_msgs::Point& p1,
+                                                                        const geometry_msgs::Point& p2,
+                                                                        const geometry_msgs::Point& p3,
+                                                                        int num_points) 
+  {
+    std::vector<geometry_msgs::Point> curve;
+    curve.reserve(num_points + 1);
+    
+    // Convert the cubic Bézier to polynomial form: p(t) = a*t^3 + b*t^2 + c*t + d
+    double ax = -p0.x + 3 * p1.x - 3 * p2.x + p3.x;
+    double bx = 3 * p0.x - 6 * p1.x + 3 * p2.x;
+    double cx = -3 * p0.x + 3 * p1.x;
+    double dx = p0.x;
+    
+    double ay = -p0.y + 3 * p1.y - 3 * p2.y + p3.y;
+    double by = 3 * p0.y - 6 * p1.y + 3 * p2.y;
+    double cy = -3 * p0.y + 3 * p1.y;
+    double dy = p0.y;
+    
+    double az = -p0.z + 3 * p1.z - 3 * p2.z + p3.z;
+    double bz = 3 * p0.z - 6 * p1.z + 3 * p2.z;
+    double cz = -3 * p0.z + 3 * p1.z;
+    double dz = p0.z;
+    
+    double dt = 1.0 / num_points;
+    double dt2 = dt * dt;
+    double dt3 = dt2 * dt;
+    
+    // Forward differences for x coordinate:
+    double x = dx;
+    double dx1 = cx * dt + bx * dt2 + ax * dt3;
+    double dx2 = 2 * bx * dt2 + 6 * ax * dt3;
+    double dx3 = 6 * ax * dt3;
+    
+    // Forward differences for y coordinate:
+    double y = dy;
+    double dy1 = cy * dt + by * dt2 + ay * dt3;
+    double dy2 = 2 * by * dt2 + 6 * ay * dt3;
+    double dy3 = 6 * ay * dt3;
+    
+    // Forward differences for z coordinate:
+    double z = dz;
+    double dz1 = cz * dt + bz * dt2 + az * dt3;
+    double dz2 = 2 * bz * dt2 + 6 * az * dt3;
+    double dz3 = 6 * az * dt3;
+    
+    for (int i = 0; i <= num_points; ++i) {
+        geometry_msgs::Point pt;
+        pt.x = x;
+        pt.y = y;
+        pt.z = z;
+        curve.push_back(pt);
+        
+        x += dx1;
+        dx1 += dx2;
+        dx2 += dx3;
+        
+        y += dy1;
+        dy1 += dy2;
+        dy2 += dy3;
+        
+        z += dz1;
+        dz1 += dz2;
+        dz2 += dz3;
+    }
+    
+    return curve;
+  }
+
+  // Helper function: computes a unit vector from 'from' to 'to'
+  geometry_msgs::Point VisualizerNode::computeUnitVector(const geometry_msgs::Point& from, 
+                                                         const geometry_msgs::Point& to) 
+  {
+    geometry_msgs::Point vec;
+    vec.x = to.x - from.x;
+    vec.y = to.y - from.y;
+    vec.z = to.z - from.z;
+    double norm = std::hypot(vec.x, vec.y, vec.z);
+
+    if (norm > 1e-6) {
+      vec.x /= norm;
+      vec.y /= norm;
+      vec.z /= norm;
+    }
+    return vec;
+  }
+
+  // Improved function: Compute a smooth transition curve (using a cubic Bézier curve)
+  // between the end of the spiral_path and the start of the uturn_path.
+  std::vector<geometry_msgs::Point> VisualizerNode::computeTransitionCurve(
+      const std::vector<geometry_msgs::Point>& spiral_path,
+      const std::vector<geometry_msgs::Point>& uturn_path) {
+
+    std::vector<geometry_msgs::Point> transitionCurve;
+    if (spiral_path.empty() || uturn_path.empty())
+    return transitionCurve;
+
+    // p0: last point of the spiral path.
+    geometry_msgs::Point p0 = spiral_path.back();
+    // p3: first point of the U-turn path.
+    geometry_msgs::Point p3 = uturn_path.front();
+
+    // Compute heading at the end of the spiral using its last two points.
+    geometry_msgs::Point p_prev = (spiral_path.size() >= 2) ? spiral_path[spiral_path.size() - 2] : spiral_path.back();
+    geometry_msgs::Point headingSpiral = computeUnitVector(p_prev, p0);
+
+    // Compute heading at the beginning of the U-turn using its first two points.
+    geometry_msgs::Point p_next = (uturn_path.size() >= 2) ? uturn_path[1] : uturn_path.front();
+    geometry_msgs::Point headingUturn = computeUnitVector(p3, p_next);
+
+    // Calculate the straight-line distance between p0 and p3 using std::hypot for 3D distance
+    double dx = p3.x - p0.x;
+    double dy = p3.y - p0.y;
+    double dz = p3.z - p0.z;
+    double distance = std::hypot(dx, dy, dz); // C++17 style
+  
+    // Compute the angle between the two headings.
+    double dotProduct = headingSpiral.x * headingUturn.x +
+                        headingSpiral.y * headingUturn.y +
+                        headingSpiral.z * headingUturn.z;
+    // Clamp the dot product to avoid numerical issues.
+    dotProduct = std::max(-1.0, std::min(1.0, dotProduct));
+    double angle = std::acos(dotProduct);
+
+    // Adaptively set the control distance:
+    // Use a base scale (e.g., 0.25) and add extra length proportional to the angle.
+    double controlScale = 0.25 + 0.5 * (angle / M_PI);
+    double controlDist = distance * controlScale;
+
+    // Define the control points for the Bézier curve.
+    geometry_msgs::Point p1;
+    p1.x = p0.x + headingSpiral.x * controlDist;
+    p1.y = p0.y + headingSpiral.y * controlDist;
+    p1.z = p0.z + headingSpiral.z * controlDist;
+
+    geometry_msgs::Point p2;
+    p2.x = p3.x - headingUturn.x * controlDist;
+    p2.y = p3.y - headingUturn.y * controlDist;
+    p2.z = p3.z - headingUturn.z * controlDist;
+
+    // Optionally, choose a finer resolution for sharper transitions.
+    int num_points = (angle > 0.5) ? 20 : 10;
+
+    // Generate the Bézier transition curve.
+    transitionCurve = generateBezierCurve(p0, p1, p2, p3, num_points);
+
+    return transitionCurve;
+  }
+
+  std::vector<geometry_msgs::Point> VisualizerNode::convertToRosPoints(const ToolPolyline& toolPolyline) {
+    std::vector<geometry_msgs::Point> rosPoints;
+    rosPoints.resize(toolPolyline.size());  // Preallocate memory
+
+    std::transform(toolPolyline.begin(), toolPolyline.end(), rosPoints.begin(),
+                   [](const ToolPoint& tp) {
+                       geometry_msgs::Point p;
+                       p.x = tp.x;
+                       p.y = tp.y;
+                       p.z = 0.0;  // z is zero
+                       return p;
+                   });
+    return rosPoints;
+  }
+  
+  std::vector<geometry_msgs::Point> VisualizerNode::smoothWaypoints(const std::vector<geometry_msgs::Point>& path) {
+    // 1. Remove redundant points
+    // If the path is empty, or has fewer than 3 points, no smoothing is needed.
+    if (path.size() < 3)
+      return path;
+    
+    std::vector<geometry_msgs::Point> cleanPath;
+    cleanPath.reserve(path.size());
+    cleanPath.push_back(path[0]);
+    // Define a threshold distance below which points are considered redundant.
+    const double threshold = 1e-3; // e.g., 0.001 units (adjust as needed)
+    
+    for (size_t i = 1; i < path.size(); ++i) {
+      const geometry_msgs::Point& pt = path[i];
+      const geometry_msgs::Point& last = cleanPath.back();
+      double dx = pt.x - last.x;
+      double dy = pt.y - last.y;
+      double dz = pt.z - last.z;
+      if (std::sqrt(dx * dx + dy * dy + dz * dz) > threshold)
+        cleanPath.push_back(pt);
+    }
+    if (cleanPath.size() < 3)
+      return cleanPath;
+    
+    // 2. Apply CCMA smoothing on the cleaned path.
+    // Use member variables m_iterations_num_ and m_correction_weight_ for tuning.
+    std::vector<geometry_msgs::Point> newPath = cleanPath;
+    const size_t n = newPath.size();
+    std::vector<geometry_msgs::Point> tempPath(n);
+    
+    for (int iter = 0; iter < m_iterations_num_; ++iter) {
+      // Preserve endpoints.
+      tempPath[0] = newPath[0];
+      tempPath[n - 1] = newPath[n - 1];
+      
+      // Process intermediate points.
+      #ifdef _OPENMP
+      #pragma omp parallel for
+      #endif
+      for (int i = 1; i < static_cast<int>(n) - 1; ++i) {
+        const geometry_msgs::Point& prev = newPath[i - 1];
+        const geometry_msgs::Point& curr = newPath[i];
+        const geometry_msgs::Point& next = newPath[i + 1];
+        
+        // Compute the midpoint between the neighboring points.
+        double midx = (prev.x + next.x) * 0.5;
+        double midy = (prev.y + next.y) * 0.5;
+        double midz = (prev.z + next.z) * 0.5;
+        
+        // Compute vectors for curvature estimation (using x and y dimensions).
+        double v1x = curr.x - prev.x;
+        double v1y = curr.y - prev.y;
+        double v2x = next.x - curr.x;
+        double v2y = next.y - curr.y;
+        
+        double norm1_sq = v1x * v1x + v1y * v1y;
+        double norm2_sq = v2x * v2x + v2y * v2y;
+        
+        // If either segment is extremely short, skip updating.
+        if (norm1_sq < 1e-12 || norm2_sq < 1e-12) {
+          tempPath[i] = curr;
+          continue;
+        }
+        
+        double norm1 = std::sqrt(norm1_sq);
+        double norm2 = std::sqrt(norm2_sq);
+        
+        // Compute the turning angle using the dot product.
+        double dot = v1x * v2x + v1y * v2y;
+        double cos_angle = dot / (norm1 * norm2);
+        // Clamp cos_angle to [-1, 1] to avoid numerical issues.
+        if (cos_angle > 1.0)  cos_angle = 1.0;
+        if (cos_angle < -1.0) cos_angle = -1.0;
+        double angle = std::acos(cos_angle);
+        
+        // Compute the distance between the neighboring points (using x and y).
+        double dx = next.x - prev.x;
+        double dy = next.y - prev.y;
+        double dist = std::sqrt(dx * dx + dy * dy);
+        
+        // Approximate curvature as turning angle divided by distance.
+        double curvature = (dist > 1e-6) ? angle / dist : 0.0;
+        // Compute the correction weight (gamma) scaled by curvature.
+        double gamma = (m_correction_weight_ * curvature < 1.0) ? m_correction_weight_ * curvature : 1.0;
+        
+        // Update the current point by blending its position with the midpoint.
+        tempPath[i].x = (1.0 - gamma) * curr.x + gamma * midx;
+        tempPath[i].y = (1.0 - gamma) * curr.y + gamma * midy;
+        tempPath[i].z = (1.0 - gamma) * curr.z + gamma * midz;
+      }
+      newPath.swap(tempPath);
+    }
+    
+    return newPath;
+  }
+    
+
+  /*
+  * interpolateWaypoints
+  *
+  * This function generates a dense sequence of poses (geometry_msgs::PoseStamped) from a given
+  * path (a vector of geometry_msgs::Point). It ensures that:
+  *
+  * 1. The linear distance between any two consecutive poses is no greater than m_interp_dist_step_.
+  * 2. Each pose's orientation is set so that it points toward its immediate next neighbor.
+  * 3. The angular difference (yaw) between consecutive poses is no more than m_interp_angular_step_.
+  *    If the yaw difference is too large, additional intermediate poses are inserted.
+  *
+  * Note:
+  * - This code is intended for ROS Noetic. Since ROS Noetic does not provide tf2::getYaw,
+  *   we use tf::getYaw (from <tf/transform_datatypes.h>). Make sure to include that header.
+  */
+  std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const std::vector<geometry_msgs::Point>& path) {
+    std::vector<geometry_msgs::PoseStamped> poses;
+
+    if (path.empty())
+      return poses;
+
+    // Reserve an estimated capacity to avoid multiple reallocations.
+    poses.reserve(path.size() * 4);
+
+    // Check if the input path has enough points to perform interpolation.
+    if (path.size() < 2)
+      return poses;  // Not enough points to form a valid path
+
+    // ---------------------------------------------------------------------------
+    // 1. Position Interpolation:
+    // ---------------------------------------------------------------------------
+    // For each segment between consecutive path points, generate intermediate positions
+    // so that the distance between any two successive points is <= m_interp_dist_step_.
+    for (size_t i = 0; i < path.size() - 1; ++i) {
+      const geometry_msgs::Point& start = path[i];
+      const geometry_msgs::Point& end   = path[i + 1];
+
+      // Compute differences along each axis.
+      double dx = end.x - start.x;
+      double dy = end.y - start.y;
+      double dz = end.z - start.z;
+
+      // Calculate the Euclidean distance of the segment.
+      double seg_length = std::sqrt(dx * dx + dy * dy + dz * dz);
+      if (seg_length < 1e-6)
+        continue;  // Skip degenerate segments
+
+      // Determine the number of steps (at least 1) needed so that each segment is no longer than m_interp_dist_step_.
+      int num_steps = std::max(static_cast<int>(std::ceil(seg_length / m_interp_dist_step_)), 1);
+
+      // For the very first segment, add the starting point to the pose vector.
+      if (i == 0) {
+        geometry_msgs::PoseStamped ps;
+        ps.pose.position = start;
+        poses.push_back(ps);
+      }
+
+      // Interpolate positions along the segment and add each computed pose.
+      for (int s = 1; s <= num_steps; ++s) {
+        double t = static_cast<double>(s) / num_steps;
+        geometry_msgs::PoseStamped ps;
+        ps.pose.position.x = start.x + t * dx;
+        ps.pose.position.y = start.y + t * dy;
+        ps.pose.position.z = start.z + t * dz;
+        poses.push_back(ps);
+      }
+    }
+
+    // ---------------------------------------------------------------------------
+    // 2. Orientation Assignment:
+    // ---------------------------------------------------------------------------
+    // Precompute yaw angles for all poses and assign orientations so that each pose “faces”
+    // the next one. This avoids re-calling tf::getYaw repeatedly later.
+    std::vector<double> yaws;
+    yaws.resize(poses.size());
+    for (size_t i = 0; i < poses.size() - 1; ++i) {
+      // Compute yaw based on the vector from the current position to the next.
+      const geometry_msgs::Point& cur = poses[i].pose.position;
+      const geometry_msgs::Point& nxt = poses[i + 1].pose.position;
+      yaws[i] = std::atan2(nxt.y - cur.y, nxt.x - cur.x);
+
+      // Create a quaternion from the computed yaw (roll and pitch are zero).
+      tf2::Quaternion q;
+      q.setRPY(0, 0, yaws[i]);
+      poses[i].pose.orientation = tf2::toMsg(q);
+    }
+    // For the last pose, copy the previous pose's orientation.
+    if (poses.size() > 1) {
+      yaws.back() = yaws[poses.size() - 2];
+      poses.back().pose.orientation = poses[poses.size() - 2].pose.orientation;
+    }
+
+    // ---------------------------------------------------------------------------
+    // 3. Angular Interpolation:
+    // ---------------------------------------------------------------------------
+    // Ensure that the yaw difference between consecutive poses is within m_interp_angular_step_.
+    // If not, insert additional poses with interpolated orientations and positions.
+    std::vector<geometry_msgs::PoseStamped> final_poses;
+    // Reserve extra capacity to reduce reallocations during intermediate insertions.
+    final_poses.reserve(poses.size() * 2);
+    final_poses.push_back(poses[0]);  // Start with the first pose
+
+    for (size_t i = 0; i < poses.size() - 1; ++i) {
+      double yaw_current = yaws[i];
+      double yaw_next = yaws[i + 1];
+
+      // Compute the yaw difference and normalize it to the interval (-pi, pi].
+      double d_yaw = yaw_next - yaw_current;
+      // Normalize the yaw difference to the interval (-pi, pi]
+      while (d_yaw > M_PI)
+        d_yaw -= 2 * M_PI;
+      while (d_yaw <= -M_PI)
+        d_yaw += 2 * M_PI;
+
+      // Determine how many angular steps are needed.
+      int ang_steps = (std::fabs(d_yaw) > m_interp_angular_step_) ? std::ceil(std::fabs(d_yaw) / m_interp_angular_step_) : 1;
+
+      // Insert additional intermediate poses if the angular difference is too large.
+      for (int j = 1; j < ang_steps; ++j) {
+        double t = static_cast<double>(j) / ang_steps;
+        double interp_yaw = yaw_current + t * d_yaw;
+
+        // Interpolate the position linearly between the current and next pose.
+        geometry_msgs::PoseStamped ps;
+        ps.pose.position.x = poses[i].pose.position.x + t * (poses[i + 1].pose.position.x - poses[i].pose.position.x);
+        ps.pose.position.y = poses[i].pose.position.y + t * (poses[i + 1].pose.position.y - poses[i].pose.position.y);
+        ps.pose.position.z = poses[i].pose.position.z + t * (poses[i + 1].pose.position.z - poses[i].pose.position.z);
+
+        // Create a quaternion from the interpolated yaw.
+        tf2::Quaternion q;
+        q.setRPY(0, 0, interp_yaw);
+        ps.pose.orientation = tf2::toMsg(q);
+
+        // Add the intermediate pose.
+        final_poses.push_back(ps);
+      }
+      // Add the next original pose.
+      final_poses.push_back(poses[i + 1]);
+    }
+
+    // ---------------------------------------------------------------------------
+    // Optional: Publish the final set of interpolated waypoints.
+    // This can be useful for visualization or debugging.
+    // publishFixedPatternWayPoints(final_poses, fixed_pattern_plan_pose_array_pub_);
+
+    // Return the final, densely interpolated pose sequence.
+    return final_poses;
+  }
+
+
+  std::vector<geometry_msgs::PoseStamped> VisualizerNode::interpolateWaypoints(const F2CPath& path) {
+    // interpolation with waypoints
+    geometry_msgs::PoseStamped pre_wpt;
+    path.getStates()[0].point.getX();
+    pre_wpt.pose.position.x = path.getStates()[0].point.getX();
+    pre_wpt.pose.position.y = path.getStates()[0].point.getY();
+    double wpt_gap_thresh_hold = 1.0;
+    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
+
+    for (auto&& s : path.getStates()) {
+      geometry_msgs::PoseStamped cur_wpt;
+      cur_wpt.header.frame_id = frame_id_;
+      cur_wpt.header.stamp = ros::Time::now();
+
+      conversor::ROS::to(s.point, s.angle, cur_wpt);
+      double dist = std::hypot((pre_wpt.pose.position.x - cur_wpt.pose.position.x), 
+                               (pre_wpt.pose.position.y - cur_wpt.pose.position.y));
+
+      if (dist > wpt_gap_thresh_hold) {
+        int num_samples = dist / interp_step_;
+        std::vector<geometry_msgs::PoseStamped> interp_path;
+        interpolatePoints(pre_wpt, cur_wpt, num_samples, cur_wpt.header.frame_id, cur_wpt.header.stamp, interp_path);
+        if (!interp_path.empty() && interp_path.size() > 0) {
+          // Add the interp_path to the end of the marker_swaths.points vector
+          std::vector<geometry_msgs::Point> interp_pts;
+          for (auto& wpt : interp_path) {
+            interp_pts.push_back(poseStampedToPoint(wpt));
+          }
+          fixed_pattern_plan.insert(fixed_pattern_plan.end(), interp_path.begin(), interp_path.end());
+        }
+      }
+
+      fixed_pattern_plan.push_back(cur_wpt);
+      // update pre wpt for next loop
+      pre_wpt = cur_wpt;
+    }
+
+    //----------------------------------------------------------
+    // Transform each point in the polygon
+    transformPoses(gps2map_transform_, fixed_pattern_plan);
+    //----------------------------------------------------------
+
+    // if (reverse_path_) {
+    //   ROS_ERROR("reverse path");
+    //   // reserve orientation
+    //   for (auto& wpt : fixed_pattern_plan) {
+    //     reverseOrientation(wpt);
+    //   }
+    //   std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
+    // }
+    
+    // publish topics
+    publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
+
+    // interpolated waypoints
+    return fixed_pattern_plan;
+  }
+
+
+  void VisualizerNode::publishFixedPatternPlan(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub) {
+
+    //create a message for the plan
+    nav_msgs::Path gui_path;
+    gui_path.poses.resize(path.size());
+
+    gui_path.header.frame_id = frame_id_;
+    gui_path.header.stamp    = ros::Time::now();
+
+    // Extract the plan in world co-ordinates, we assume the path is all in the same frame
+    for (unsigned int i = 0; i < path.size(); i++) {
+      gui_path.poses[i] = path[i];
+    }
+
+    pub.publish(gui_path);
+  }
+
+  void VisualizerNode::publishFixedPatternWayPoints(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub) {
+    // Create a PoseArray and populate it from the vector
+    geometry_msgs::PoseArray pose_array;
+    pose_array.header.frame_id = frame_id_;
+    pose_array.header.stamp = ros::Time::now();
+
+    // If the path is not empty, add poses. Otherwise, leave pose_array.poses empty.
+    if (!path.empty()) {
+      for (const auto& pose_stamped : path) {
+        pose_array.poses.push_back(pose_stamped.pose);
+      }
+    }
+    
+    // Publish the (possibly empty) PoseArray so RViz will update its display
+    pub.publish(pose_array);
+  }
+
+  geometry_msgs::Point VisualizerNode::poseStampedToPoint(const geometry_msgs::PoseStamped& pose_stamped) {
+    geometry_msgs::Point point;
+
+    // Extract position from PoseStamped and assign to Point
+    point.x = pose_stamped.pose.position.x;
+    point.y = pose_stamped.pose.position.y;
+    point.z = pose_stamped.pose.position.z;
+
+    return point;
+  }
+
+  // simple linear interpolation
+  void VisualizerNode::interpolatePoints(const geometry_msgs::PoseStamped& start_point, 
+                                         const geometry_msgs::PoseStamped& end_point, 
+                                         const int& num_samples,
+                                         const std::string& frame_id,
+                                         const ros::Time& timestamp,
+                                         std::vector<geometry_msgs::PoseStamped>& interp_path) {
+    for (int i = 0; i <= num_samples; ++i) {
+      double t = static_cast<double>(i) / num_samples;  // Normalized value of t in [0, 1]
+      interp_path.push_back(interpolate(start_point, end_point, t, frame_id, timestamp));
+    }
+
+    ROS_INFO("interp wpt size: %d", int(interp_path.size()));
+  }
+
+  // Function to perform linear interpolation between two 2D points
+  geometry_msgs::PoseStamped VisualizerNode::interpolate(const geometry_msgs::PoseStamped& p0,
+                                                         const geometry_msgs::PoseStamped& p1,
+                                                         const double& t,
+                                                         const std::string& frame_id,
+                                                         const ros::Time &timestamp) {
+    geometry_msgs::PoseStamped result;
+
+    result.header.frame_id = frame_id;
+    result.header.stamp    = timestamp;
+
+    result.pose.position.x = (1 - t) * p0.pose.position.x + t * p1.pose.position.x;
+    result.pose.position.y = (1 - t) * p0.pose.position.y + t * p1.pose.position.y;
+    result.pose.position.z = 0.0;
+
+    result.pose.orientation = p0.pose.orientation;
+    return result;
+  }
+
+  void VisualizerNode::writePathToFile(const std::vector<geometry_msgs::PoseStamped>& plan, std::ofstream& path_file) {
+    for (auto& wpt : plan) {
+      path_file << wpt.pose.position.x    << " "
+                << wpt.pose.position.y    << " "
+                << 0                      << " "
+                // << wpt.pose.position.z << " "
+                << wpt.pose.orientation.x << " "
+                << wpt.pose.orientation.y << " "
+                << wpt.pose.orientation.z << " "
+                << wpt.pose.orientation.w << std::endl;
+    }
+  }
+
+  void VisualizerNode::savePath(const std::vector<geometry_msgs::PoseStamped>& path) {
+    if (m_save_path_ && !path.empty()) {
+      std::ofstream path_file;
+      std::string path_file_name;
+  
+      if (!is_cache_mode_) {
+        path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
+      }
+      else { // cache mode
+        path_file_name = field_file_path_ + "/path.txt";
+  
+        // Check if file exists
+        struct stat buffer;
+        if (stat(path_file_name.c_str(), &buffer) == 0) {
+          // File already exists; remove it
+          if (std::remove(path_file_name.c_str()) != 0) {
+            ROS_ERROR("Failed to remove existing file: %s", path_file_name.c_str());
+            // Optionally, handle the error (return / exit / etc.)
+          } else {
+            ROS_INFO("Removed existing file: %s", path_file_name.c_str());
+          }
+        }
+      }
+  
+      path_file.open(path_file_name);
+      writePathToFile(path, path_file);
+      path_file.close();
+      ROS_INFO("%s generated", path_file_name.c_str());  
+    } 
   }
 
   void VisualizerNode::initializeGrid(double origin_x, double origin_y, int width, int height, double resolution) {
@@ -115,6 +1286,51 @@ namespace fields2cover_ros {
     // Initialize the grid data, all cells are unknown (-1)
     occupancy_grid_.data.resize(width * height, -1);
   }
+
+  void VisualizerNode::generateGrid(const geometry_msgs::PolygonStamped& border) {
+
+    // Calculate the bounding box of the polygon
+    double min_x = std::numeric_limits<double>::max();
+    double max_x = std::numeric_limits<double>::lowest();
+    double min_y = std::numeric_limits<double>::max();
+    double max_y = std::numeric_limits<double>::lowest();
+
+    for (const auto& point : border.polygon.points) {
+      if (point.x < min_x) min_x = point.x;
+      if (point.x > max_x) max_x = point.x;
+      if (point.y < min_y) min_y = point.y;
+      if (point.y > max_y) max_y = point.y;
+    }
+
+    // Calculate the width, height, and origin of the occupancy grid
+    double width_m    = max_x - min_x;
+    double height_m   = max_y - min_y;
+    double resolution = 0.05; // 0.05 meter per cell, can be adjusted as needed
+
+    int grid_width  = static_cast<int>(width_m / resolution)  + 1;
+    int grid_height = static_cast<int>(height_m / resolution) + 1;
+
+    // Initialize the occupancy grid
+    initializeGrid(min_x, min_y, grid_width, grid_height, resolution);
+
+    // Mark the polygon points in the occupancy grid
+    for (const auto& point : border.polygon.points) {
+      int grid_x = static_cast<int>((point.x - min_x) / resolution);
+      int grid_y = static_cast<int>((point.y - min_y) / resolution);
+
+      // Ensure the coordinates are within bounds
+      if (grid_x >= 0 && grid_x < occupancy_grid_.info.width &&
+        grid_y >= 0 && grid_y < occupancy_grid_.info.height) {
+        
+        int index = grid_y * occupancy_grid_.info.width + grid_x;
+        occupancy_grid_.data[index] = 100;  // Mark the cell as occupied
+      }
+    }
+
+    // Publish the updated occupancy grid
+    map_pub_.publish(occupancy_grid_);
+  }
+
 
   // Helper function to write the occupancy grid into PGM + YAML.
   void VisualizerNode::saveMap() {
@@ -196,400 +1412,6 @@ namespace fields2cover_ros {
     ROS_INFO_STREAM("Map saved:\n\t" << mapdatafile << "\n\t" << yamlFile);
   }
 
-  void VisualizerNode::publish_topics(void) {
-
-    //----------------------------------------------------------
-    // border GPS contour publish
-    auto f = fields_[0].field.clone();
-    geometry_msgs::PolygonStamped polygon_st;
-    polygon_st.header.stamp = ros::Time::now();
-    polygon_st.header.frame_id = frame_id_;
-
-    // transform polygon points coord
-    conversor::ROS::to(f.getCellBorder(0), polygon_st.polygon);
-    transformPoints(gps2map_transform_, polygon_st);
-
-    field_polygon_publisher_.publish(polygon_st);
-    //----------------------------------------------------------
-    // calculate 2d GPS and create a marker
-    visualization_msgs::Marker line_strip;
-    line_strip.header.frame_id = frame_id_; // Change to your frame
-    line_strip.header.stamp = ros::Time::now();
-    line_strip.ns = "2d_border_marker";
-    line_strip.action = visualization_msgs::Marker::ADD;
-    line_strip.pose.orientation.w = 1.0;
-
-    line_strip.id = 0;
-    line_strip.type = visualization_msgs::Marker::LINE_STRIP;
-
-    // Set the line color (RGB + alpha)
-    line_strip.color.r = 0.0;
-    line_strip.color.g = 1.0;
-    line_strip.color.b = 1.0;
-    line_strip.color.a = 1.0;
-
-    // Set the line width
-    line_strip.scale.x = 0.2; // Line width
-
-    // Add points to the marker
-    for (const auto& point : polygon_st.polygon.points) {
-      geometry_msgs::Point p;
-      p.x = point.x;
-      p.y = point.y;
-      p.z = 0.0;
-      line_strip.points.push_back(p);
-    }
-
-    field_2d_border_publisher_.publish(line_strip);
-    //----------------------------------------------------------
-    // occupancy grid 2D map creation
-
-    // Calculate the bounding box of the polygon
-    double min_x = std::numeric_limits<double>::max();
-    double max_x = std::numeric_limits<double>::lowest();
-    double min_y = std::numeric_limits<double>::max();
-    double max_y = std::numeric_limits<double>::lowest();
-
-    for (const auto& point : polygon_st.polygon.points) {
-      if (point.x < min_x) min_x = point.x;
-      if (point.x > max_x) max_x = point.x;
-      if (point.y < min_y) min_y = point.y;
-      if (point.y > max_y) max_y = point.y;
-    }
-
-    // Calculate the width, height, and origin of the occupancy grid
-    double width_m    = max_x - min_x;
-    double height_m   = max_y - min_y;
-    double resolution = 0.05; // 0.05 meter per cell, can be adjusted as needed
-
-    int grid_width  = static_cast<int>(width_m / resolution)  + 1;
-    int grid_height = static_cast<int>(height_m / resolution) + 1;
-
-    // Initialize the occupancy grid
-    initializeGrid(min_x, min_y, grid_width, grid_height, resolution);
-
-    // Mark the polygon points in the occupancy grid
-    for (const auto& point : polygon_st.polygon.points) {
-      int grid_x = static_cast<int>((point.x - min_x) / resolution);
-      int grid_y = static_cast<int>((point.y - min_y) / resolution);
-
-      // Ensure the coordinates are within bounds
-      if (grid_x >= 0 && grid_x < occupancy_grid_.info.width &&
-        grid_y >= 0 && grid_y < occupancy_grid_.info.height) {
-        
-        int index = grid_y * occupancy_grid_.info.width + grid_x;
-        occupancy_grid_.data[index] = 100;  // Mark the cell as occupied
-      }
-    }
-
-    // Publish the updated occupancy grid
-    map_pub_.publish(occupancy_grid_);
-    //----------------------------------------------------------
-    polygon_st.polygon.points.clear();
-    //----------------------------------------------------------
-    // no_headlands publisher
-
-    f2c::hg::ConstHL hl_gen_;
-    F2CCell no_headlands = hl_gen_.generateHeadlands(f, optim_.headland_width).getGeometry(0);
-
-    geometry_msgs::PolygonStamped polygon_st2;
-    polygon_st2.header.stamp = ros::Time::now();
-    polygon_st2.header.frame_id = frame_id_;
-
-    // transfrom no_headlands points coord
-    conversor::ROS::to(no_headlands.getGeometry(0), polygon_st2.polygon);
-    transformPoints(gps2map_transform_, polygon_st2);
-
-    field_no_headlands_publisher_.publish(polygon_st2);
-    //----------------------------------------------------------
-    polygon_st2.polygon.points.clear();
-    //----------------------------------------------------------
-    // swaths path generation
-
-    F2CSwaths swaths;
-    f2c::sg::BruteForce swath_gen_;
-    if (automatic_angle_) {
-      switch (sg_objective_) {
-        case 0 : {
-          f2c::obj::SwathLength obj;
-          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
-          break;
-        }
-        case 1 : {
-          f2c::obj::NSwath obj;
-          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
-          break;
-        }
-        case 2 : {
-          f2c::obj::FieldCoverage obj;
-          swaths = swath_gen_.generateBestSwaths(obj, robot_.op_width, no_headlands);
-          break;
-        }
-      }
-    }
-    else {
-      swaths = swath_gen_.generateSwaths(optim_.best_angle, robot_.op_width, no_headlands);
-    }
-
-    F2CSwaths route;
-    switch (opt_route_type_) {
-      case 0 : {
-        f2c::rp::BoustrophedonOrder swath_sorter;
-        route = swath_sorter.genSortedSwaths(swaths);
-        break;
-      }
-      case 1 : {
-        f2c::rp::SnakeOrder swath_sorter;
-        route = swath_sorter.genSortedSwaths(swaths);
-        break;
-      }
-      case 2 : {
-        f2c::rp::SpiralOrder swath_sorter(6);
-        route = swath_sorter.genSortedSwaths(swaths);
-        break;
-      }
-      case 3 : {
-        f2c::rp::SpiralOrder swath_sorter(4);
-        route = swath_sorter.genSortedSwaths(swaths);
-        break;
-      }
-    }
-
-    F2CPath path;
-    f2c::pp::PathPlanning path_planner;
-
-    switch(opt_turn_type_) {
-      case 0 : {
-        f2c::pp::DubinsCurves turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
-        break;
-      }
-      case 1 : {
-        f2c::pp::DubinsCurvesCC turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
-        break;
-      }
-      case 2 : {
-        f2c::pp::ReedsSheppCurves turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
-        break;
-      }
-      case 3 : {
-        f2c::pp::ReedsSheppCurvesHC turn;
-        path = path_planner.searchBestPath(robot_, route, turn);
-        break;
-      }
-    }
-
-    visualization_msgs::Marker marker_swaths;
-    marker_swaths.header.frame_id = frame_id_;
-    marker_swaths.header.stamp = ros::Time::now();
-    marker_swaths.action = visualization_msgs::Marker::ADD;
-    marker_swaths.pose.orientation.w = 1.0;
-    // marker_swaths.type = visualization_msgs::Marker::LINE_STRIP;
-    marker_swaths.type = visualization_msgs::Marker::POINTS;
-    marker_swaths.scale.x = 0.5;
-    marker_swaths.scale.y = 0.5;
-    marker_swaths.scale.z = 0.1;
-
-    marker_swaths.color.r = 0.0;   // Red
-    marker_swaths.color.g = 0.0;   // Green
-    marker_swaths.color.b = 1.0;   // Blue (adjust to get the exact brightness you want)
-    marker_swaths.color.a = 1.0;   // Full opacity
-
-    // Transform each point in the polygon
-    transformPoints(gps2map_transform_, path, marker_swaths);
-
-    field_swaths_publisher_.publish(marker_swaths);
-    //========================================================
-    // interpolation with waypoints
-
-    geometry_msgs::PoseStamped pre_wpt;
-    pre_wpt.pose.position.x = path.states[0].point.getX();
-    pre_wpt.pose.position.y = path.states[0].point.getY();
-
-    double wpt_gap_thresh_hold = 1.0;
-    std::vector<geometry_msgs::PoseStamped> fixed_pattern_plan;
-
-    for (auto&& s : path.states) {
-      geometry_msgs::PoseStamped cur_wpt;
-      cur_wpt.header.frame_id = frame_id_;
-      cur_wpt.header.stamp = marker_swaths.header.stamp;
-
-      conversor::ROS::to(s.point, s.angle, cur_wpt);
-      double dist = std::hypot((pre_wpt.pose.position.x - cur_wpt.pose.position.x), 
-                               (pre_wpt.pose.position.y - cur_wpt.pose.position.y));
-
-      if (dist > wpt_gap_thresh_hold) {
-        int num_samples = dist / interp_step_;
-        std::vector<geometry_msgs::PoseStamped> interp_path;
-        interpolatePoints(pre_wpt, cur_wpt, num_samples, cur_wpt.header.frame_id, cur_wpt.header.stamp, interp_path);
-        if (!interp_path.empty() && interp_path.size() > 0) {
-          // Add the interp_path to the end of the marker_swaths.points vector
-          std::vector<geometry_msgs::Point> interp_pts;
-          for (auto& wpt : interp_path) {
-            interp_pts.push_back(poseStampedToPoint(wpt));
-          }
-          fixed_pattern_plan.insert(fixed_pattern_plan.end(), interp_path.begin(), interp_path.end());
-        }
-      }
-
-      fixed_pattern_plan.push_back(cur_wpt);
-      // update pre wpt for next loop
-      pre_wpt = cur_wpt;
-    }
-
-    //----------------------------------------------------------
-    // Transform each point in the polygon
-    transformPoses(gps2map_transform_, fixed_pattern_plan);
-    //----------------------------------------------------------
-
-    if (reverse_path_) {
-      ROS_ERROR("reverse path");
-      // reserve orientation
-      for (auto& wpt : fixed_pattern_plan) {
-        reverseOrientation(wpt);
-      }
-      std::reverse(fixed_pattern_plan.begin(), fixed_pattern_plan.end());
-    }
-    //----------------------------------------------------------
-    // publish topics
-    publishFixedPatternWayPoints(fixed_pattern_plan, fixed_pattern_plan_pose_array_pub_);
-    //========================================================
-    // save path file
-    std::ofstream path_file;
-    std::string path_file_name;
-
-    if (!is_cache_mode_) {
-      path_file_name = field_file_path_ + "/u_path_" + std::to_string(path_file_seq_++) + ".txt";
-    }
-    else { // cache mode
-      path_file_name = field_file_path_ + "/path.txt";
-
-      // Check if file exists
-      struct stat buffer;
-      if (stat(path_file_name.c_str(), &buffer) == 0) {
-        // File already exists; remove it
-        if (std::remove(path_file_name.c_str()) != 0) {
-          ROS_ERROR("Failed to remove existing file: %s", path_file_name.c_str());
-          // Optionally, handle the error (return / exit / etc.)
-        } else {
-          ROS_INFO("Removed existing file: %s", path_file_name.c_str());
-        }
-      }
-    }
-
-    path_file.open(path_file_name);
-    writePathToFile(fixed_pattern_plan, path_file);
-    path_file.close();
-    ROS_INFO("%s generated", path_file_name.c_str());
-    //========================================================
-  }
-
-  void VisualizerNode::rqt_callback(fields2cover_ros::F2CConfig &config, uint32_t level) {
-    robot_.op_width = config.op_width;
-    robot_.setMinRadius(config.turn_radius);
-    optim_.best_angle = config.swath_angle;
-    optim_.headland_width = config.headland_width;
-    automatic_angle_ = config.automatic_angle;
-    sg_objective_ = config.sg_objective;
-    opt_turn_type_ = config.turn_type;
-    opt_route_type_ = config.route_type;
-    reverse_path_ = config.reverse_path;
-    publish_topics();
-  }
-
-  void VisualizerNode::publishFixedPatternPlan(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub) {
-
-    //create a message for the plan
-    nav_msgs::Path gui_path;
-    gui_path.poses.resize(path.size());
-
-    gui_path.header.frame_id = frame_id_;
-    gui_path.header.stamp    = ros::Time::now();
-
-    // Extract the plan in world co-ordinates, we assume the path is all in the same frame
-    for (unsigned int i = 0; i < path.size(); i++) {
-      gui_path.poses[i] = path[i];
-    }
-
-    pub.publish(gui_path);
-  }
-
-
-  void VisualizerNode::publishFixedPatternWayPoints(const std::vector<geometry_msgs::PoseStamped>& path, const ros::Publisher& pub) {
-
-    // Create a PoseArray and populate it from the vector
-    geometry_msgs::PoseArray pose_array;
-    pose_array.header.frame_id = frame_id_;
-    pose_array.header.stamp = ros::Time::now();
-
-    for (const auto& pose_stamped : path) {
-      pose_array.poses.push_back(pose_stamped.pose); // Add only the pose part
-    }
-
-    // Publish the PoseArray
-    pub.publish(pose_array);
-  }
-
-  geometry_msgs::Point VisualizerNode::poseStampedToPoint(const geometry_msgs::PoseStamped& pose_stamped) {
-    geometry_msgs::Point point;
-
-    // Extract position from PoseStamped and assign to Point
-    point.x = pose_stamped.pose.position.x;
-    point.y = pose_stamped.pose.position.y;
-    point.z = pose_stamped.pose.position.z;
-
-    return point;
-  }
-
-  // simple linear interpolation
-  void VisualizerNode::interpolatePoints(const geometry_msgs::PoseStamped& start_point, 
-                                         const geometry_msgs::PoseStamped& end_point, 
-                                         const int& num_samples,
-                                         const std::string& frame_id,
-                                         const ros::Time& timestamp,
-                                         std::vector<geometry_msgs::PoseStamped>& interp_path) {
-    for (int i = 0; i <= num_samples; ++i) {
-      double t = static_cast<double>(i) / num_samples;  // Normalized value of t in [0, 1]
-      interp_path.push_back(interpolate(start_point, end_point, t, frame_id, timestamp));
-    }
-
-    ROS_INFO("interp wpt size: %d", int(interp_path.size()));
-  }
-
-  // Function to perform linear interpolation between two 2D points
-  geometry_msgs::PoseStamped VisualizerNode::interpolate(const geometry_msgs::PoseStamped& p0,
-                                                         const geometry_msgs::PoseStamped& p1,
-                                                         const double& t,
-                                                         const std::string& frame_id,
-                                                         const ros::Time &timestamp) {
-    geometry_msgs::PoseStamped result;
-
-    result.header.frame_id = frame_id;
-    result.header.stamp    = timestamp;
-
-    result.pose.position.x = (1 - t) * p0.pose.position.x + t * p1.pose.position.x;
-    result.pose.position.y = (1 - t) * p0.pose.position.y + t * p1.pose.position.y;
-    result.pose.position.z = 0.0;
-
-    result.pose.orientation = p0.pose.orientation;
-    return result;
-  }
-
-  void VisualizerNode::writePathToFile(const std::vector<geometry_msgs::PoseStamped>& plan, std::ofstream& path_file) {
-    for (auto& wpt : plan) {
-      path_file << wpt.pose.position.x    << " "
-                << wpt.pose.position.y    << " "
-                << 0                      << " "
-                // << wpt.pose.position.z << " "
-                << wpt.pose.orientation.x << " "
-                << wpt.pose.orientation.y << " "
-                << wpt.pose.orientation.z << " "
-                << wpt.pose.orientation.w << std::endl;
-    }
-  }
-
   void VisualizerNode::reverseOrientation(geometry_msgs::PoseStamped& pose) {
     // Extract the quaternion from the pose
     tf2::Quaternion q_orig, q_rot, q_new;
@@ -656,72 +1478,88 @@ namespace fields2cover_ros {
 
   // transform PolygonStamped points coord
   void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, geometry_msgs::PolygonStamped& polygon) {
-
+    // Precompute translation components.
+    const double t_x = poseTransform.pose.position.x;
+    const double t_y = poseTransform.pose.position.y;
+    // Note: The z translation is ignored since we force z to 0.
+  
+    // Precompute rotation matrix elements from the quaternion.
     tf2::Quaternion q(
       poseTransform.pose.orientation.x,
       poseTransform.pose.orientation.y,
       poseTransform.pose.orientation.z,
       poseTransform.pose.orientation.w
     );
-    tf2::Vector3 t(
-      poseTransform.pose.position.x,
-      poseTransform.pose.position.y,
-      poseTransform.pose.position.z
-    );
-
-    tf2::Transform transform;
-    transform.setOrigin(t);
-    transform.setRotation(q);
-
-    // Transform each point in the polygon
-    for (auto & pt : polygon.polygon.points) {
-      // Original point
-      tf2::Vector3 p_in(pt.x, pt.y, pt.z);
-
-      // Apply the transform
-      tf2::Vector3 p_out = transform * p_in;
-
-      pt.x = p_out.x();
-      pt.y = p_out.y();
-      // pt.z = p_out.z();
-      pt.z = 0.0;
+    tf2::Matrix3x3 m(q);
+    const double r00 = m[0][0], r01 = m[0][1], r02 = m[0][2];
+    const double r10 = m[1][0], r11 = m[1][1], r12 = m[1][2];
+  
+    // Optionally, for a large number of points, consider using parallelization.
+    #pragma omp parallel for
+    for (size_t i = 0; i < polygon.polygon.points.size(); ++i) {
+      auto &pt = polygon.polygon.points[i];
+      // Compute the new x and y coordinates directly.
+      double new_x = t_x + r00 * pt.x + r01 * pt.y + r02 * pt.z;
+      double new_y = t_y + r10 * pt.x + r11 * pt.y + r12 * pt.z;
+  
+      pt.x = new_x;
+      pt.y = new_y;
+      pt.z = 0.0;  // Force z to zero.
     }
   }
-
+  
   // transform Path -> Marker points coord
-  void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, const F2CPath& path, visualization_msgs::Marker& marker) {
-
+  void VisualizerNode::transformPoints(const geometry_msgs::PoseStamped& poseTransform, F2CPath& path, visualization_msgs::Marker& marker) {
+    const size_t nPoints = path.size();
+    
+    // Preallocate marker points vector.
+    marker.points.clear();
+    marker.points.resize(nPoints);
+    
+    // Precompute translation.
+    const double t_x = poseTransform.pose.position.x;
+    const double t_y = poseTransform.pose.position.y;
+    // Even if poseTransform.pose.position.z exists, we force z to 0.
+    
+    // Precompute the rotation matrix once.
     tf2::Quaternion q(
       poseTransform.pose.orientation.x,
       poseTransform.pose.orientation.y,
       poseTransform.pose.orientation.z,
       poseTransform.pose.orientation.w
     );
-    tf2::Vector3 t(
-      poseTransform.pose.position.x,
-      poseTransform.pose.position.y,
-      poseTransform.pose.position.z
-    );
-
-    tf2::Transform transform;
-    transform.setOrigin(t);
-    transform.setRotation(q);
-
-    // Transform each point in the polygon
-    for (auto&& s : path.states) {
-      geometry_msgs::Point ros_p;
-      conversor::ROS::to(s.point, ros_p);
-
-      // Original point
-      tf2::Vector3 p_in(ros_p.x, ros_p.y, ros_p.z);
-      // Apply the transform
-      tf2::Vector3 p_out = transform * p_in;
-
-      ros_p.x = p_out.x();
-      ros_p.y = p_out.y();
-      // ros_p.z = p_out.z();
-      ros_p.z = 0.0;
-      marker.points.push_back(ros_p);
+    tf2::Matrix3x3 m(q);
+    const double r00 = m[0][0], r01 = m[0][1], r02 = m[0][2];
+    const double r10 = m[1][0], r11 = m[1][1], r12 = m[1][2];
+    // We ignore the third row as we force z to zero.
+  
+    // Retrieve the states (assumed to be in a contiguous container like std::vector).
+    auto& states = path.getStates();
+  
+    // Use OpenMP for parallel processing if the dataset is large.
+    #pragma omp parallel for
+    for (int i = 0; i < static_cast<int>(nPoints); ++i) {
+      auto& state = states[i];
+      
+      // Get original coordinates.
+      const double x = state.point.getX();
+      const double y = state.point.getY();
+      const double z = state.point.getZ();
+      
+      // Compute transformed coordinates directly.
+      const double new_x = t_x + r00 * x + r01 * y + r02 * z;
+      const double new_y = t_y + r10 * x + r11 * y + r12 * z;
+      const double new_z = 0.0;  // Force z to 0.
+      
+      // Update the state point.
+      state.point.setX(new_x);
+      state.point.setY(new_y);
+      state.point.setZ(new_z);
+      
+      // Update the marker point at the same index.
+      marker.points[i].x = new_x;
+      marker.points[i].y = new_y;
+      marker.points[i].z = new_z;
     }
   }
 

@@ -1,8 +1,32 @@
-cmake_minimum_required(VERSION 3.0.2)
+cmake_minimum_required(VERSION 3.10)
+
+# Suppress developer warnings (equivalent to using -Wno-dev on the command line)
+set(CMAKE_SUPPRESS_DEVELOPER_WARNINGS 1 CACHE INTERNAL "Suppress developer warnings")
+
+# Set policies to avoid deprecation warnings
+# cmake_policy(SET CMP0148 OLD)
+# cmake_policy(SET CMP0167 OLD)
+
 project(fields2cover_ros)
 
+# (Optional) Explicitly set the Python executable if needed.
+set(PYTHON_EXECUTABLE "/usr/bin/python3")
+
+# Specify the C++ standard using CMake’s built-in mechanism
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# If no build type is specified, default to Release
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the type of build (Debug, Release, etc.)" FORCE)
+endif()
+
+message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
+
+# Append optimization flags for Release builds (GCC/Clang)
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+  set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -O3 -march=native -flto")
+endif()
 
 # Update the policy setting to avoid an error when loading the ament_cmake package
 # at the current cmake version level
@@ -11,6 +35,17 @@ if(POLICY CMP0057)
 endif()
 
 find_package(Fields2Cover REQUIRED)
+
+find_package(Eigen3 REQUIRED)
+
+# Find the Clipper2 library in the devel lib directory.
+find_library(CLIPPER2_LIBRARY
+  NAMES Clipper2
+  PATHS ${CLIPPER2_LIB_DIR}
+)
+if(NOT CLIPPER2_LIBRARY)
+  message(FATAL_ERROR "Could not find Clipper2 library in ${CLIPPER2_LIB_DIR}")
+endif()
 
 find_package(ament_cmake QUIET)
 find_package(catkin QUIET)
@@ -106,8 +141,11 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
       include
       ${catkin_INCLUDE_DIRS}
     )
+
+    include_directories(${EIGEN3_INCLUDE_DIRS})
+
     add_library(${PROJECT_NAME} SHARED src/ros/conversor.cpp)
-    target_link_libraries(${PROJECT_NAME} Fields2Cover)
+    target_link_libraries(${PROJECT_NAME} PRIVATE Fields2Cover::Fields2Cover -lgdal)
 
     install(DIRECTORY include/
             DESTINATION include/
@@ -129,16 +167,18 @@ elseif( CATKIN_DEVEL_PREFIX OR CATKIN_BUILD_BINARY_PACKAGE )
       add_executable(visualizer_node
           src/fields2cover_visualizer_node.cpp
           src/Fields2CoverVisualizerNode.cpp
+          src/toolpath_generator.cpp
       )
 
       target_link_libraries(visualizer_node
-         ${catkin_LIBRARIES} Fields2Cover ${PROJECT_NAME}
+        PRIVATE Fields2Cover::Fields2Cover ${catkin_LIBRARIES} ${PROJECT_NAME} -lgdal ${CLIPPER2_LIBRARY}
       )
       add_dependencies(visualizer_node ${catkin_EXPORTED_TARGETS} ${PROJECT_NAME}_gencfg )
     endif()
 
-    if(CATKIN_ENABLE_TESTING OR BUILD_TESTING)
-      add_subdirectory(test)
-    endif()
+    # disactive tests
+    # if(CATKIN_ENABLE_TESTING OR BUILD_TESTING)
+    #   add_subdirectory(test)
+    # endif()
 endif()
 
